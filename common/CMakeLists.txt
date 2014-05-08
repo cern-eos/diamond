@@ -1,0 +1,28 @@
+include_directories( ../ )
+
+
+link_directories( ${CMAKE_INSTALL_FULL_LIBDIR}
+		)
+
+add_library( DiamondCommon SHARED
+  Logging.cc
+)
+
+target_link_libraries( DiamondCommon pthread
+)
+
+
+if (Linux)
+  set_target_properties (DiamondCommon PROPERTIES
+    VERSION ${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}
+    SOVERSION ${VERSION_MAJOR}
+    CLEAN_DIRECT_OUTPUT 1
+  )
+endif(Linux)
+
+install ( TARGETS DiamondCommon
+          LIBRARY DESTINATION ${CMAKE_INSTALL_FULL_LIBDIR}64
+          RUNTIME DESTINATION ${CMAKE_INSTALL_FULL_BINDIR}
+          ARCHIVE DESTINATION ${CMAKE_INSTALL_FULL_LIBDIR}
+)
+
