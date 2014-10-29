@@ -6,9 +6,13 @@
 #include <cstdio>
 
 #include "common/Logging.hh"
+#include "common/Timing.hh"
+#include "rio/diamondCache.hh"
+#include <sys/statvfs.h>
 
-static const char *os_str = "RadosFS\n";
-//static const char *os_name = "RadosFS";
+static const char *os_str = "DiamondFS\n";
+
+//static const char *os_name = "DiamondFS";
 
 struct statvfs stat_fs;
 
@@ -18,18 +22,43 @@ struct statvfs stat_fs;
 //!   g++ -Wall `pkg-config fuse --cflags --libs` os.cpp -o os
 //------------------------------------------------------------------------------
 
-class radosfs : public llfusexx::fs<radosfs> 
+using namespace diamond::rio;
+
+class diamondfs : public llfusexx::fs<diamondfs> , public diamond::rio::diamondCache
 {
 private:
 
 public:
+
+  static double entrycachetime; 
+  static double attrcachetime;
+
+  static void
+  dump_stat(struct stat* st) 
+  {
+    diamond_static_debug("dev=%llx ino=%llx mode=%llx link=%llx uid=%llx gid=%llx rdev=%llx size=%llx blksize=%llx blocks=%llx atime=%llu mtime=%llu, ctime=%llu",
+			 (unsigned long long) st->st_dev,
+			 (unsigned long long) st->st_ino,
+			 (unsigned long long) st->st_mode,
+			 (unsigned long long) st->st_nlink,
+			 (unsigned long long) st->st_uid,
+			 (unsigned long long) st->st_gid, 
+			 (unsigned long long) st->st_rdev,
+			 (unsigned long long) st->st_size,
+			 (unsigned long long) st->st_blksize,
+			 (unsigned long long) st->st_blocks,
+			 (unsigned long long) st->st_atime,
+			 (unsigned long long) st->st_mtime,
+			 (unsigned long long) st->st_ctime);
+  }
   //--------------------------------------------------------------------------
   //! Constructor
   //--------------------------------------------------------------------------
 
-  radosfs () 
+  diamondfs () 
   { 
     diamond_static_debug("");
+    FS = this;
   };
 
   //--------------------------------------------------------------------------
@@ -37,7 +66,7 @@ public:
   //--------------------------------------------------------------------------
 
   virtual
-  ~radosfs () 
+  ~diamondfs () 
   { 
     diamond_static_debug("");
   };
@@ -71,21 +100,21 @@ public:
            fuse_ino_t ino,
            struct fuse_file_info *fi)
   {
-    struct stat stbuf;
-    diamond_static_debug("");
+    diamond_static_debug("ino=%llx", ino);
     
     (void) fi;
 
-    memset(&stbuf, 0, sizeof ( stbuf));
 
-    /*
-    int rc = sDirSvc.Stat(sNameSvc.GetPath(ino), stbuf);
-    if (rc)
-      fuse_reply_err(req, rc);
-    else
-      fuse_reply_attr(req, &stbuf, 1.0);
-    */
-    fuse_reply_err(req, ENOENT);
+    diamondCache::diamondDirPtr inode = FS->getDir(DIAMOND_INODE(ino), false, false);
+
+    struct stat* st = inode->getStat();
+    diamond_static_debug("size=%d mode=%x ino=%llu inode=%llu (%d/%d) (%d/%d)", st->st_size, st->st_mode, ino, st->st_ino, sizeof(fuse_ino_t), sizeof(st->st_ino), sizeof(struct stat), sizeof(st));
+    int rc = 0;
+    if (!inode)
+      fuse_reply_err(req, ENOENT);
+    else 
+      rc = fuse_reply_attr(req, st, attrcachetime);
+    diamond_static_debug("rc=%d", rc);
   }
 
   //--------------------------------------------------------------------------
@@ -112,48 +141,70 @@ public:
           const char *name)
   {
     struct fuse_entry_param e;
-    diamond_static_debug("");
+    diamond_static_debug("name=%s", name);
 
-    printf("%lu %s\n", parent, name);
     memset(&e, 0, sizeof ( e));
 
-    //    struct stat stbuf;
+    diamondCache::diamondDirPtr inode = FS->getDir(DIAMOND_INODE(parent), false, false);
+
+    if (!inode) {
+      fuse_reply_err(req, ENOENT);
+      return;
+    }
     
-    /*
-    e.ino = sNameSvc.GetInode(parent, name);
-    e.attr_timeout = 1.0;
-    e.entry_timeout = 1.0;
-    int rc = sDirSvc.Stat(sNameSvc.GetPath(e.ino), stbuf);
-    if (rc)
-      fuse_reply_err(req, rc);
-    else
-      fuse_reply_entry(req, &e);
-    */
-    
+    if (!inode->getNamesInode().count(name)) {
+      fuse_reply_err(req, ENOENT);
+      return;
+    }
+      
+    e.ino = DIAMOND_TO_INODE(inode->getNamesInode()[name]);
+    e.attr_timeout = attrcachetime;
+    e.entry_timeout = entrycachetime;
+    struct stat* st=0;
+    inode = FS->getDir(DIAMOND_INODE(e.ino), false, false);
+    if (!inode) {
+      diamondCache::diamondFilePtr finode = FS->getFile(DIAMOND_INODE(e.ino), false, false);
+      if (!finode) {
+	// very unlikely if not impossible
+	fuse_reply_err(req, ENOENT);
+	return;
+      }
+      st = finode->getStat();
+    } else {
+      st = inode->getStat();
+    }
+    memcpy(&e.attr, st, sizeof(struct stat));
+    dump_stat(&e.attr);
+    fuse_reply_entry(req,&e);
   }
 
   struct dirbuf
   {
     char *p;
     size_t size;
+    size_t alloc_size;
   };
 
   static void
   dirbuf_add (fuse_req_t req, struct dirbuf *b, const char *name,
               fuse_ino_t ino)
   {
-    diamond_static_debug("");
+    diamond_static_debug("name=%s ino=%llx", name, ino);
 
     struct stat stbuf;
     size_t oldsize = b->size;
     b->size += fuse_add_direntry(req, NULL, 0, name, NULL, 0);
-    char *newp = (char*) realloc(b->p, b->size);
-    if (!newp)
-    {
-      fprintf(stderr, "*** fatal error: cannot allocate memory\n");
-      abort();
+    if (b->size > b->alloc_size) {
+      // avoid reallocation for every single entry
+      char *newp = (char*) realloc(b->p, b->size+(256*1024));
+      if (!newp) {
+	fprintf(stderr, "*** fatal error: cannot allocate memory\n");
+	abort();
+      }
+      b->p = newp;
+      b->alloc_size = b->size+(256*1024);
     }
-    b->p = newp;
+
     memset(&stbuf, 0, sizeof ( stbuf));
     stbuf.st_ino = ino;
     fuse_add_direntry(req, b->p + oldsize, b->size - oldsize, name, &stbuf,
@@ -166,13 +217,57 @@ public:
   reply_buf_limited (fuse_req_t req, const char *buf,
                      size_t bufsize, off_t off, size_t maxsize)
   {
-    /*
     if (off < (off_t)bufsize)
       return fuse_reply_buf(req, buf + off, min(bufsize - off, maxsize));
     else
       return fuse_reply_buf(req, NULL, 0);
-    */
-    return -1;
+  }
+
+  //--------------------------------------------------------------------------
+  //! Produce cached directory contents
+  //--------------------------------------------------------------------------
+  static void 
+  opendir (fuse_req_t req, 
+	   fuse_ino_t ino,
+	   struct fuse_file_info *fi)
+  {
+    (void) fi;
+    diamond_static_debug("ino=%llu", ino);
+
+    diamondCache::diamondDirPtr inode = FS->getDir(DIAMOND_INODE(ino), false, false);
+
+    if (!inode) {
+      diamondCache::diamondFilePtr finode = FS->getFile(DIAMOND_INODE(ino),false,false);
+      if (!finode) {
+	fuse_reply_err(req, ENOENT);
+	return;
+      } else {
+	fuse_reply_err(req, ENOTDIR);
+	return;
+      }
+    }
+    
+    fi->fh = (uint64_t) new struct dirbuf;
+    struct dirbuf* b = (struct dirbuf*) fi->fh;
+
+    memset(b, 0, sizeof ( struct dirbuf));
+
+    dirbuf_add(req, b, ".", ino);
+    dirbuf_add(req, b, "..", ino);
+    
+    for (std::set<diamond_ino_t>::const_iterator it = (*inode).std::set<diamond_ino_t>::begin(); it != (*inode).std::set<diamond_ino_t>::end(); ++it) {
+      // get each inode to add the name
+      diamondCache::diamondDirPtr dinode = FS->getDir(*it,false,false);
+      if (!dinode) {
+	diamondCache::diamondFilePtr finode = FS->getFile(*it,false,false);
+	if (finode) {
+	  dirbuf_add(req, b, finode->getName().c_str(), DIAMOND_TO_INODE(*it));
+	}
+      } else {
+	dirbuf_add(req, b, dinode->getName().c_str(), DIAMOND_TO_INODE(*it));
+      }
+    }
+    fuse_reply_open(req, fi);
   }
 
   //--------------------------------------------------------------------------
@@ -186,37 +281,29 @@ public:
            off_t off,
            struct fuse_file_info *fi)
   {
-    (void) fi;
-    diamond_static_debug("");
-
-    /*
-    if (ino != 1)
-      fuse_reply_err(req, ENOTDIR);
-    else
-    {
-      struct dirbuf b;
-      DirectoryServer::dir_list_t lDirList;
-
-      int rc = sDirSvc.List(sNameSvc.GetPath(ino), lDirList);
-      if (rc)
-      {
-        fuse_reply_err(req, rc);
-      }
-      else
-      {
-        memset(&b, 0, sizeof ( b));
-
-        for (auto it = lDirList.begin(); it != lDirList.end(); ++it)
-        {
-          dirbuf_add(req, &b, it->first.c_str(), it->second);
-        }
-
-        reply_buf_limited(req, b.p, b.size, off, size);
-        free(b.p);
-      }
+    if (fi && fi->fh) {
+      struct dirbuf* b = (struct dirbuf*) fi->fh;
+      reply_buf_limited(req, b->p, b->size, off, size);
     }
-    */
-    fuse_reply_err(req, ENOTDIR);
+  }
+
+  //--------------------------------------------------------------------------
+  //! Release cached directory contents
+  //--------------------------------------------------------------------------
+
+  static void
+  releasedir (fuse_req_t req, 
+	      fuse_ino_t ino,
+	      struct fuse_file_info *fi)
+  {
+    if (fi->fh) {
+      struct dirbuf* b = (struct dirbuf*) fi->fh;
+
+      free(b->p);
+      delete b;
+      fi->fh = 0;
+    }
+    fuse_reply_err(req, 0);
   }
 
   //--------------------------------------------------------------------------
@@ -229,13 +316,16 @@ public:
     diamond_static_debug("");
     memset(&stat_fs, 0, sizeof (stat_fs));
 
-    stat_fs.f_bsize = 65536;
+    stat_fs.f_bsize = 4096;
+    stat_fs.f_frsize = 4096;
     stat_fs.f_blocks = 1000000ll;
     stat_fs.f_bfree = 1000000ll;
     stat_fs.f_bavail = 1000000ll;
     stat_fs.f_files = 1000000ll;
     stat_fs.f_ffree = 1000000ll;
     stat_fs.f_fsid = 99;
+    stat_fs.f_flag = 1;
+    stat_fs.f_namemax = 512;
 
     fuse_reply_statfs(req, &stat_fs);
   }
@@ -265,14 +355,39 @@ public:
          mode_t mode)
   {
     diamond_static_debug("");
-    /*
-    fuse_ino_t ino = sNameSvc.GetInode(parent, name);
-    int rc = sDirSvc.Mkdir(sNameSvc.GetPath(ino),
-                           ino,
-                           mode);
-    fuse_reply_err(req, rc);
-    */
-    fuse_reply_err(req, ENOENT);
+
+    diamondCache::diamondDirPtr inode = FS->getDir(DIAMOND_INODE(parent), false, false);
+
+    if (!inode) {
+      fuse_reply_err(req, ENOENT);
+      return ;
+    }
+
+    if (inode->getNamesInode().count(name)) {
+      fuse_reply_err(req, EEXIST);
+      return ;
+    }
+
+    // create a new entry
+    diamond_ino_t new_ino = FS->newInode();
+    diamondCache::diamondDirPtr new_inode = FS->getDir(new_ino, true, true, name );
+    if (new_inode)
+      new_inode->makeStat(fuse_req_ctx(req)->uid, fuse_req_ctx(req)->gid, DIAMOND_TO_INODE(new_ino), S_IFDIR | mode, 0);
+
+    
+    struct fuse_entry_param e;
+    memcpy(&e.attr, new_inode->getStat(), sizeof(struct stat));
+
+    e.ino = e.attr.st_ino;
+    e.attr_timeout  = attrcachetime;
+    e.entry_timeout = entrycachetime;
+
+    // attach to the parent
+    inode->getNamesInode()[name]=new_ino;
+    inode->std::set<diamond_ino_t>::insert(new_ino);
+    dump_stat(&e.attr);
+    diamond_static_debug("ino=%s name=%s\n", new_inode->getIno().c_str(), new_inode->getName().c_str());
+    fuse_reply_entry(req, &e);
   }
 
   //--------------------------------------------------------------------------
@@ -293,17 +408,43 @@ public:
   rmdir (fuse_req_t req, fuse_ino_t parent, const char *name)
   {
     diamond_static_debug("");
-    /*
-    fuse_ino_t ino = sNameSvc.GetInode(parent, name);
-    int rc = sDirSvc.Rmdir(sNameSvc.GetPath(ino), ino);
-    if (!rc)
-    {
 
-      sNameSvc.ForgetInode(ino, parent, name);
+    diamondCache::diamondDirPtr inode = FS->getDir(DIAMOND_INODE(parent), false, false);
+
+    if (!inode) {
+      fuse_reply_err(req, ENOENT);
+      return ;
     }
-    fuse_reply_err(req, rc);
-    */
-    fuse_reply_err(req, ENOENT);
+
+    if (!inode->getNamesInode().count(name)) {
+      fuse_reply_err(req, ENOENT);
+      return ;
+    }
+
+    diamond_ino_t ino = inode->getNamesInode()[name];
+    diamondCache::diamondDirPtr child = FS->getDir(ino, false, false);
+
+    if (!child) {
+      fuse_reply_err(req, ENOENT);
+      return ;
+    }
+
+    if (child->getNamesInode().size()) {
+      fuse_reply_err(req, ENOTEMPTY);
+      return ;
+    }
+
+    // remove 'name' directory
+    if ( FS->rmDir(ino) ) {
+      fuse_reply_err(req, ENOENT);
+      return ;
+    }
+
+    // update parent
+    inode->getNamesInode().erase(name);
+    inode->std::set<diamond_ino_t>::erase(ino);
+    
+    return;
   }
 
   //--------------------------------------------------------------------------
@@ -506,7 +647,18 @@ public:
   {
     diamond_static_debug("");
   }
+
+  //--------------------------------------------------------------------------
+  //! Singleton
+  //--------------------------------------------------------------------------
+  static diamondfs* FS;
+
 };
+
+diamondfs* diamondfs::FS = 0;
+double diamondfs::entrycachetime = 1.0;
+double diamondfs::attrcachetime  = 1.0;
+
 
 int
 main (int argc, char *argv[])
@@ -516,33 +668,118 @@ main (int argc, char *argv[])
   //! options if specified
   //----------------------------------------------------------------------------
 
-  radosfs fs;
+  diamondfs fs;
+  bool selftest = true;
 
   //----------------------------------------------------------------------------
   // Configure the Logging
   // Two Env vars define the log leve:
-  // export RADOSFS_FUSE_DEBUG=1 to run in debug mode
-  // export RADOSFS_FUSE_LOGLEVEL=<n> to set the log leve different from LOG_INFO
+  // export DIAMONDFS_FUSE_DEBUG=1 to run in debug mode
+  // export DIAMONDFS_FUSE_LOGLEVEL=<n> to set the log leve different from LOG_INFO
   //----------------------------------------------------------------------------
   diamond::common::Logging::Init();
-  diamond::common::Logging::SetUnit("FUSE/RadosFS");
+  diamond::common::Logging::SetUnit("FUSE/DiamondFS");
   diamond::common::Logging::gShortFormat = true;
-  std::string fusedebug = getenv("RADOSFS_FUSE_DEBUG")?getenv("RADOSFS_FUSE_DEBUG"):"0";
+  std::string fusedebug = getenv("DIAMONDFS_FUSE_DEBUG")?getenv("DIAMONDFS_FUSE_DEBUG"):"0";
   
-  if ((getenv("RADOSFS_FUSE_DEBUG")) && (fusedebug != "0"))
+  if ((getenv("DIAMONDFS_FUSE_DEBUG")) && (fusedebug != "0"))
   {
     diamond::common::Logging::SetLogPriority(LOG_DEBUG);
   }
   else
   { 
-    if ((getenv("RADOSFS_FUSE_LOGLEVEL"))) 
+    if ((getenv("DIAMONDFS_FUSE_LOGLEVEL"))) 
     {
-      diamond::common::Logging::SetLogPriority(atoi(getenv("RADOSFS_FUSE_LOGLEVEL")));
+      diamond::common::Logging::SetLogPriority(atoi(getenv("DIAMONDFS_FUSE_LOGLEVEL")));
     } 
     else 
     {
       diamond::common::Logging::SetLogPriority(LOG_INFO);
     }
+  }
+
+  // create root node
+  diamond_ino_t root_ino = fs.newInode();
+  diamondCache::diamondDirPtr root = fs.getDir(root_ino, true, true, "/");
+  if (root)
+    root->makeStat(0,0,0, S_IFDIR | 0777, 1);
+
+  std::stringstream s;
+  fs.DumpCachedDirs(s);
+  std::cerr << s.str();
+
+  diamond::common::Timing tm1("mkdir");
+  diamond::common::Timing tm2("stat");
+  diamond::common::Timing tm3("rmdir");
+  
+  if (selftest) {
+    diamond_ino_t selftest_ino;
+    diamondCache::diamondDirPtr selftest_inode;
+
+    {
+      COMMONTIMING("t0",&tm1);
+      //----------------------------------------------------------------------------
+      // self test
+      //----------------------------------------------------------------------------
+      selftest_ino = fs.newInode();
+      selftest_inode = fs.getDir(selftest_ino, true, true, ".selftest" );
+      if (selftest_inode)
+	selftest_inode->makeStat(0,0,DIAMOND_TO_INODE(selftest_ino), S_IFDIR | 0777, 0);
+      
+      root->getNamesInode()[".selftest"]=selftest_ino;
+      root->std::set<diamond_ino_t>::insert(selftest_ino);
+      
+      for (size_t i = 0; i < 100000; ++i) {
+	// create a new entry
+	diamond_ino_t new_ino = fs.newInode();
+	diamondCache::diamondDirPtr new_inode = fs.getDir(new_ino, true, true, std::to_string(i).c_str() );
+	if (new_inode)
+	new_inode->makeStat( i%10, i%10 , DIAMOND_TO_INODE(new_ino), S_IFDIR | S_IRWXU, 0);
+	
+	// attach to the parent
+	selftest_inode->getNamesInode()[std::to_string(i)]=new_ino;
+	selftest_inode->std::set<diamond_ino_t>::insert(new_ino);
+      }
+      COMMONTIMING("t1",&tm1);
+    }
+
+    {
+      COMMONTIMING("t0",&tm2);
+      for (auto it = selftest_inode->std::set<diamond_ino_t>::begin(); it != selftest_inode->std::set<diamond_ino_t>::end(); ++it) {
+	diamondCache::diamondDirPtr inode = fs.getDir(*it, false, false);
+      }
+      COMMONTIMING("t1",&tm2);
+    }
+
+    {
+      COMMONTIMING("t0",&tm3);
+      for (auto it = selftest_inode->getNamesInode().begin(); it != selftest_inode->getNamesInode().end(); ++it) {
+	selftest_inode->getNamesInode().erase(it->first);
+	selftest_inode->std::set<diamond_ino_t>::erase(it->second);
+	fs.rmDir(it->second);
+      }
+      COMMONTIMING("t1",&tm3);
+    }
+    {
+      for (size_t i = 0; i < 100000; ++i) {
+	// create a new entry
+	diamond_ino_t new_ino = fs.newInode();
+	diamondCache::diamondDirPtr new_inode = fs.getDir(new_ino, true, true, std::to_string(i).c_str() );
+	if (new_inode)
+	  new_inode->makeStat( i%10, i%10 , DIAMOND_TO_INODE(new_ino), S_IFDIR | S_IRWXU, 0);
+	
+	// attach to the parent
+	selftest_inode->getNamesInode()[std::to_string(i)]=new_ino;
+	selftest_inode->std::set<diamond_ino_t>::insert(new_ino);
+      }
+    }
+  }
+
+
+  if (selftest) {
+    diamond_static_notice("unit=self-test create=%.02f kHz", 100000/tm1.RealTime());
+    diamond_static_notice("unit=self-test lookup=%.02f kHz", 100000/tm2.RealTime());
+    diamond_static_notice("unit=self-test remove=%.02f kHz", 100000/tm3.RealTime());
   }
 
   //----------------------------------------------------------------------------

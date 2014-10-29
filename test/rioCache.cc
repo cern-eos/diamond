@@ -1,5 +1,5 @@
 // ----------------------------------------------------------------------
-// File: Namespace.hh
+// File: BufferTest.cc
 // Author: Andreas-Joachim Peters - CERN
 // ----------------------------------------------------------------------
 
@@ -22,51 +22,55 @@
  ************************************************************************/
 
 /**
- * @file   Buffer.hh
+ * @file   BufferTest.cc
  * 
- * @brief  Class implementing buffer handling
+ * @brief  Google Test for the Buffer class
  * 
  * 
  */
 
+#include <cstdlib>
+#include <iostream>
+#include <sstream>
 
-#ifndef __DIAMONDCOMMON_BUFFER_HH__
-#define __DIAMONDCOMMON_BUFFER_HH__
+#include "gtest/gtest.h"
+#include "common/Logging.hh"
+#include "rio/diamondCache.hh"
 
-#include "Namespace.hh"
-#include <memory>
+using namespace diamond::common;
+using namespace diamond::rio;
 
-DIAMONDCOMMONNAMESPACE_BEGIN
+TEST (diamondCache, CacheLRU) {
+  Logging::Init();
+  Logging::SetUnit("GTEST");
+  Logging::SetLogPriority(LOG_DEBUG);
 
-class Bufferll
-{
-public:
-  void* mPtr;
-  bool mOwn;
-  Bufferll(void* ptr=0, bool own=false) {
-    mPtr = ptr;
-    mOwn = own;
+  diamondCache icache("/");
+
+  EXPECT_EQ(icache.dsize(), 0);
+  EXPECT_EQ(icache.fsize(), 0);
+
+  for (size_t i=0 ; i< 1000; i++) {
+    std::stringstream s;
+    s << i;
+    icache.getFile(s.str());
+    icache.getDir(s.str());
   }
-  virtual ~Bufferll() {
-    if (mPtr && mOwn) {
-      free(mPtr);
-    }
-  }
-  void* operator*() const  { return (void*) mPtr;}
-};
 
-class Buffer {
-public:
-  std::shared_ptr<Bufferll> mBuffer;
-  Buffer(void* ptr=0, bool own=false) {
-    mBuffer = std::make_shared<Bufferll> (ptr,own);
+  EXPECT_EQ(icache.dsize(), 1000);
+  EXPECT_EQ(icache.fsize(), 1000);
+
+  diamond_static_info("f-cache-size=%u d-cache-size=%u", icache.dsize(), icache.fsize());
+
+  for (size_t i=0 ; i< 1000; i++) {
+    std::stringstream s;
+    s << i;
+    diamondCache::diamondFilePtr f = icache.getFile(s.str(), false);
+    diamondCache::diamondDirPtr d = icache.getDir(s.str(), false);
   }
-  virtual ~Buffer() {}
   
-  void* operator*() const  { return (void*) *(*mBuffer);}
-};
-
-DIAMONDCOMMONNAMESPACE_END
-  
-#endif
+  std::stringstream sout;
+  icache.DumpCachedFiles(sout);
+  EXPECT_EQ(3890, sout.str().length());
+}
 

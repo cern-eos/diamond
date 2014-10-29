@@ -34,7 +34,7 @@ include (CPack)
 
 find_package (OpenSSL REQUIRED)
 
-add_definitions (-D_FILE_OFFSET_BITS=64 -DFUSE_USE_VERSION=26 -DLinux )
+add_definitions (-D_FILE_OFFSET_BITS=64 -DLinux )
 if (APPLE)
     add_definitions (-D__FreeBSD__=10 -std=gnu++0x)
 endif (APPLE)
@@ -45,6 +45,7 @@ include_directories (${DIAMOND_BINARY_DIR})
 include_directories (${DIAMOND_SOURCE_DIR})
 
 add_subdirectory(common)
+add_subdirectory(rio)
 add_subdirectory(fuse)
 add_subdirectory(test)
 

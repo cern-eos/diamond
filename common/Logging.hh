@@ -53,7 +53,6 @@
 #include <string.h>
 #include <sys/syslog.h>
 #include <sys/time.h>
-#include <uuid/uuid.h>
 #include <string>
 #include <vector>
 #include <set>
@@ -136,9 +135,7 @@ public:
 
   LogId ()
   {
-    uuid_t uuid;
-    uuid_generate_time(uuid);
-    uuid_unparse(uuid, logId);
+    sprintf(logId,"%08llx", (unsigned long long) this);
     sprintf(logIdentity, "<service>");
   }
 

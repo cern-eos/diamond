@@ -1,5 +1,5 @@
 // ----------------------------------------------------------------------
-// File: BufferTest.cc
+// File: Namespace.hh
 // Author: Andreas-Joachim Peters - CERN
 // ----------------------------------------------------------------------
 
@@ -22,27 +22,68 @@
  ************************************************************************/
 
 /**
- * @file   BufferTest.cc
+ * @file   Buffer.hh
  * 
- * @brief  Google Test for the BufferPtr class
+ * @brief  Class implementing buffer handling
  * 
  * 
  */
 
-#include <cstdlib>
-#include "gtest/gtest.h"
-#include "common/Logging.hh"
-#include "common/BufferPtr.hh"
 
-using namespace diamond::common;
+#ifndef __DIAMONDCOMMON_BUFFER_HH__
+#define __DIAMONDCOMMON_BUFFER_HH__
 
-TEST (BufferPtr, BufferZeroAlloc) {
-  Logging::Init();
-  Logging::SetUnit("GTEST");
-  Logging::SetLogPriority(LOG_ERR);
+#include "Namespace.hh"
+#include <memory>
+#include <vector>
+#include <string.h>
 
-  BufferPtr buffer;
-  (**buffer)[0]  = 0;
-  EXPECT_EQ( ((**buffer))[0], 0);
-}
+DIAMONDCOMMONNAMESPACE_BEGIN
+
+class Bufferll : public std::vector<char>
+{
+public:
+  Bufferll(unsigned size) {
+    resize(size);
+  }
+  virtual ~Bufferll() {
+  }
+  
+  //------------------------------------------------------------------------
+  //! Add data
+  //------------------------------------------------------------------------
+  void putData( const void *ptr, size_t dataSize ) {
+    size_t currSize = size();
+    resize( currSize + dataSize );
+    memcpy( &operator[](currSize), ptr, dataSize );
+  }
+
+  //------------------------------------------------------------------------
+  //! Add data
+  //------------------------------------------------------------------------
+  off_t grabData( off_t offset, void *ptr, size_t dataSize ) const {
+    if( offset+dataSize > size() ) {
+      return 0;
+    }
+    memcpy( ptr, &operator[](offset), dataSize );
+    return offset+dataSize;
+  }
+};
+
+class BufferPtr {
+public:
+  BufferPtr(unsigned size = 4096) {
+    mBuffer = std::make_shared<Bufferll> (size);
+  }
+  virtual ~BufferPtr() {}
+  
+  std::shared_ptr<Bufferll>  operator*()   { return mBuffer; }
+private:
+  std::shared_ptr<Bufferll> mBuffer;
+
+};
+
+DIAMONDCOMMONNAMESPACE_END
+  
+#endif
 

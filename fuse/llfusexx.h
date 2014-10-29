@@ -19,11 +19,15 @@
 #ifndef __LLFUSEXX_H__
 #define __LLFUSEXX_H__
 
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #ifndef FUSE_USE_VERSION
 #ifdef __APPLE__
 #define FUSE_USE_VERSION 27
 #else
-#define FUSE_USE_VERSION 28
+#define FUSE_USE_VERSION 26
+//#pragma message("FUSE VERSION 26")
 #endif
 #endif
 
@@ -84,14 +88,14 @@ namespace llfusexx
 	operations.rmdir        = &T::rmdir;
 	//        operations.rename       = &T::rename;
 	//        operations.open         = &T::open;
-        //        operations.opendir      = &T::opendir;
+	operations.opendir      = &T::opendir;
 	//        operations.read         = &T::read;
 	//        operations.write        = &T::write;
-	//	o  perations.statfs       = &T::statfs;
+	operations.statfs       = &T::statfs;
 	//        operations.release      = &T::release;
-	//        operations.releasedir   = &T::releasedir;
+	operations.releasedir   = &T::releasedir;
 	//        operations.fsync        = &T::fsync;
-	//        operations.forget       = &T::forget;
+	operations.forget       = &T::forget;
 	//        operations.flush        = &T::flush;
 	//        operations.setxattr     = &T::setxattr;
 	//        operations.getxattr     = &T::getxattr;

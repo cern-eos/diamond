@@ -1,4 +1,4 @@
-# Install script for directory: /afs/cern.ch/work/a/apeters/ObjectStoreFS/test
+# Install script for directory: /afs/cern.ch/work/a/apeters/diamond/test
 
 # Set the install prefix
 IF(NOT DEFINED CMAKE_INSTALL_PREFIX)
