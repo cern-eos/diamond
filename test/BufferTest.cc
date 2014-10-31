@@ -42,7 +42,11 @@ TEST (BufferPtr, BufferZeroAlloc) {
   Logging::SetLogPriority(LOG_ERR);
 
   BufferPtr buffer;
-  (**buffer)[0]  = 0;
-  EXPECT_EQ( ((**buffer))[0], 0);
+  const char* hello="hello";
+
+  (**buffer).putData(hello, strlen(hello)+1);
+  std::string a = &((**buffer)[0]);
+  std::string b = hello;
+  EXPECT_EQ( a, b);
 }
 

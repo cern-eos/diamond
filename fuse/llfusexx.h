@@ -79,28 +79,29 @@ namespace llfusexx
         operations.destroy      = &T::destroy;
         operations.getattr      = &T::getattr;
         operations.lookup       = &T::lookup;
-	//        operations.setattr      = &T::setattr;
+	operations.setattr      = &T::setattr;
 	//        operations.access       = &T::access;
         operations.readdir      = &T::readdir;
 	//        operations.mknod        = &T::mknod;
 	operations.mkdir        = &T::mkdir;
-	//        operations.unlink       = &T::unlink;
+	operations.unlink       = &T::unlink;
 	operations.rmdir        = &T::rmdir;
-	//        operations.rename       = &T::rename;
-	//        operations.open         = &T::open;
+	operations.rename       = &T::rename;
+	operations.open         = &T::open;
+	operations.create       = &T::create;
 	operations.opendir      = &T::opendir;
-	//        operations.read         = &T::read;
-	//        operations.write        = &T::write;
+	operations.read         = &T::read;
+	operations.write        = &T::write;
 	operations.statfs       = &T::statfs;
-	//        operations.release      = &T::release;
+	operations.release      = &T::release;
 	operations.releasedir   = &T::releasedir;
 	//        operations.fsync        = &T::fsync;
 	operations.forget       = &T::forget;
 	//        operations.flush        = &T::flush;
-	//        operations.setxattr     = &T::setxattr;
-	//        operations.getxattr     = &T::getxattr;
-	//        operations.listxattr    = &T::listxattr;
-	//        operations.removexattr  = &T::removexattr;
+	operations.setxattr     = &T::setxattr;
+	operations.getxattr     = &T::getxattr;
+	operations.listxattr    = &T::listxattr;
+	operations.removexattr  = &T::removexattr;
       }
 
       //------------------------------------------------------------------------

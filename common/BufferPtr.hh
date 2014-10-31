@@ -34,6 +34,7 @@
 #define __DIAMONDCOMMON_BUFFER_HH__
 
 #include "Namespace.hh"
+#include "RWMutex.hh"
 #include <memory>
 #include <vector>
 #include <string.h>
@@ -43,8 +44,11 @@ DIAMONDCOMMONNAMESPACE_BEGIN
 class Bufferll : public std::vector<char>
 {
 public:
-  Bufferll(unsigned size) {
-    resize(size);
+  Bufferll(unsigned size=0, unsigned capacity=0) {
+    if (size)
+      resize(size);
+    if (capacity)
+      reserve(capacity);
   }
   virtual ~Bufferll() {
   }
@@ -52,27 +56,79 @@ public:
   //------------------------------------------------------------------------
   //! Add data
   //------------------------------------------------------------------------
-  void putData( const void *ptr, size_t dataSize ) {
+  size_t putData( const void *ptr, size_t dataSize ) {
+    RWMutexWriteLock dLock(mMutex);
     size_t currSize = size();
     resize( currSize + dataSize );
     memcpy( &operator[](currSize), ptr, dataSize );
+    return dataSize;
+  }
+
+  off_t writeData( const void *ptr, off_t offset, size_t dataSize ) {
+    RWMutexWriteLock dLock(mMutex);
+    size_t currSize = size();
+    if ( (offset + dataSize) > currSize) {
+      currSize = offset + dataSize;
+      resize( currSize );
+      if ( currSize > capacity() ) {
+	reserve( currSize + (256*1024));
+      }
+    }
+    memcpy( &operator[](offset), ptr, dataSize );
+    return currSize;
   }
 
   //------------------------------------------------------------------------
-  //! Add data
+  //! Retrieve data
   //------------------------------------------------------------------------
-  off_t grabData( off_t offset, void *ptr, size_t dataSize ) const {
+  size_t readData( void *ptr, off_t offset, size_t dataSize ) {
+    RWMutexReadLock dLock(mMutex);
     if( offset+dataSize > size() ) {
       return 0;
     }
     memcpy( ptr, &operator[](offset), dataSize );
-    return offset+dataSize;
+    return dataSize;
   }
+
+  //------------------------------------------------------------------------
+  //! peek data ( one has to call release claim aftewards )
+  //------------------------------------------------------------------------
+  size_t peekData( char* &ptr, off_t offset, size_t dataSize ) {
+    mMutex.LockRead();
+    ptr = &(operator[](0)) + offset;
+    int avail = size()-offset;
+    if( ( (int)dataSize > avail ) ) {
+      if (avail > 0)
+	return avail;
+      else 
+	return 0;
+    }
+    return dataSize;
+  }
+
+  //------------------------------------------------------------------------
+  //! release a lock related to peekData
+  //------------------------------------------------------------------------
+  void releasePeek() {
+    mMutex.UnLockRead();
+  }  
+
+  //------------------------------------------------------------------------
+  //! truncate a buffer
+  //------------------------------------------------------------------------
+  void truncateData(off_t offset) {
+    resize(offset);
+    reserve(offset);
+  }
+
+private:
+  RWMutex mMutex;
 };
 
 class BufferPtr {
 public:
-  BufferPtr(unsigned size = 4096) {
+
+  BufferPtr(unsigned size = 0) {
     mBuffer = std::make_shared<Bufferll> (size);
   }
   virtual ~BufferPtr() {}
@@ -80,7 +136,6 @@ public:
   std::shared_ptr<Bufferll>  operator*()   { return mBuffer; }
 private:
   std::shared_ptr<Bufferll> mBuffer;
-
 };
 
 DIAMONDCOMMONNAMESPACE_END
