@@ -39,7 +39,7 @@ if (APPLE)
     add_definitions (-D__FreeBSD__=10 -std=gnu++0x)
 endif (APPLE)
 
-set(CMAKE_CXX_FLAGS "-Wall -Wno-deprecated-declarations -std=gnu++0x -DVERSION=\\\"${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}\\\" -DRELEASE=\\\"${RELEASE}\\\"" )
+set(CMAKE_CXX_FLAGS "-Wall -Wno-deprecated-declarations -mcx16 -std=gnu++0x -DVERSION=\\\"${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}\\\" -DRELEASE=\\\"${RELEASE}\\\"" )
 
 include_directories (${DIAMOND_BINARY_DIR})
 include_directories (${DIAMOND_SOURCE_DIR})

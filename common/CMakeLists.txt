@@ -7,6 +7,7 @@ link_directories( ${CMAKE_INSTALL_FULL_LIBDIR}
 add_library( diamond_common SHARED
   Logging.cc
   RWMutex.cc
+  hash/map128.cc
 )
 
 target_link_libraries( diamond_common pthread
@@ -22,7 +23,7 @@ if (Linux)
 endif(Linux)
 
 install ( TARGETS diamond_common
-          LIBRARY DESTINATION ${CMAKE_INSTALL_FULL_LIBDIR}64
+          LIBRARY DESTINATION ${CMAKE_INSTALL_FULL_LIBDIR}
           RUNTIME DESTINATION ${CMAKE_INSTALL_FULL_BINDIR}
           ARCHIVE DESTINATION ${CMAKE_INSTALL_FULL_LIBDIR}
 )
