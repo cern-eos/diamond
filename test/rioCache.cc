@@ -1,5 +1,5 @@
 // ----------------------------------------------------------------------
-// File: BufferTest.cc
+// File: rioCache.cc
 // Author: Andreas-Joachim Peters - CERN
 // ----------------------------------------------------------------------
 
@@ -22,9 +22,9 @@
  ************************************************************************/
 
 /**
- * @file   BufferTest.cc
+ * @file   rioCache.cc
  * 
- * @brief  Google Test for the Buffer class
+ * @brief  Google Test for the rioCache class
  * 
  * 
  */
