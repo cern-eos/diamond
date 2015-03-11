@@ -1,5 +1,5 @@
 // ----------------------------------------------------------------------
-// File: Namespace.hh
+// File: Buffer.hh
 // Author: Andreas-Joachim Peters - CERN
 // ----------------------------------------------------------------------
 
@@ -23,10 +23,10 @@
 
 /**
  * @file   Buffer.hh
- * 
+ *
  * @brief  Class implementing buffer handling
- * 
- * 
+ *
+ *
  */
 
 
@@ -41,67 +41,75 @@
 
 DIAMONDCOMMONNAMESPACE_BEGIN
 
-class Bufferll : public std::vector<char>
-{
+class Bufferll : public std::vector<char> {
 public:
-  Bufferll(unsigned size=0, unsigned capacity=0) {
+
+  Bufferll (unsigned size = 0, unsigned capacity = 0) {
     if (size)
       resize(size);
     if (capacity)
       reserve(capacity);
   }
-  virtual ~Bufferll() {
-  }
-  
+
+  virtual
+  ~Bufferll () { }
+
   //------------------------------------------------------------------------
   //! Add data
   //------------------------------------------------------------------------
-  size_t putData( const void *ptr, size_t dataSize ) {
+
+  size_t
+  putData (const void *ptr, size_t dataSize) {
     RWMutexWriteLock dLock(mMutex);
     size_t currSize = size();
-    resize( currSize + dataSize );
-    memcpy( &operator[](currSize), ptr, dataSize );
+    resize(currSize + dataSize);
+    memcpy(&operator[](currSize), ptr, dataSize);
     return dataSize;
   }
 
-  off_t writeData( const void *ptr, off_t offset, size_t dataSize ) {
+  off_t
+  writeData (const void *ptr, off_t offset, size_t dataSize) {
     RWMutexWriteLock dLock(mMutex);
     size_t currSize = size();
-    if ( (offset + dataSize) > currSize) {
+    if ((offset + dataSize) > currSize) {
       currSize = offset + dataSize;
-      resize( currSize );
-      if ( currSize > capacity() ) {
-	reserve( currSize + (256*1024));
+      resize(currSize);
+      if (currSize > capacity()) {
+        reserve(currSize + (256 * 1024));
       }
     }
-    memcpy( &operator[](offset), ptr, dataSize );
+    memcpy(&operator[](offset), ptr, dataSize);
     return currSize;
   }
 
   //------------------------------------------------------------------------
   //! Retrieve data
   //------------------------------------------------------------------------
-  size_t readData( void *ptr, off_t offset, size_t dataSize ) {
+
+  size_t
+  readData (void *ptr, off_t offset, size_t dataSize) {
     RWMutexReadLock dLock(mMutex);
-    if( offset+dataSize > size() ) {
+    if (offset + dataSize > size()) {
       return 0;
     }
-    memcpy( ptr, &operator[](offset), dataSize );
+    memcpy(ptr, &operator[](offset), dataSize);
     return dataSize;
   }
 
   //------------------------------------------------------------------------
   //! peek data ( one has to call release claim aftewards )
   //------------------------------------------------------------------------
-  size_t peekData( char* &ptr, off_t offset, size_t dataSize ) {
+
+  size_t
+  peekData (char* &ptr, off_t offset, size_t dataSize) {
     mMutex.LockRead();
     ptr = &(operator[](0)) + offset;
-    int avail = size()-offset;
-    if( ( (int)dataSize > avail ) ) {
+    int avail = size() - offset;
+    if (((int) dataSize > avail)) {
       if (avail > 0)
-	return avail;
-      else 
-	return 0;
+        return avail;
+      else
+        return 0;
     }
     return dataSize;
   }
@@ -109,14 +117,18 @@ public:
   //------------------------------------------------------------------------
   //! release a lock related to peekData
   //------------------------------------------------------------------------
-  void releasePeek() {
+
+  void
+  releasePeek () {
     mMutex.UnLockRead();
-  }  
+  }
 
   //------------------------------------------------------------------------
   //! truncate a buffer
   //------------------------------------------------------------------------
-  void truncateData(off_t offset) {
+
+  void
+  truncateData (off_t offset) {
     resize(offset);
     reserve(offset);
   }
@@ -128,17 +140,21 @@ private:
 class BufferPtr {
 public:
 
-  BufferPtr(unsigned size = 0) {
+  BufferPtr (unsigned size = 0) {
     mBuffer = std::make_shared<Bufferll> (size);
   }
-  virtual ~BufferPtr() {}
-  
-  std::shared_ptr<Bufferll>  operator*()   { return mBuffer; }
+
+  virtual
+  ~BufferPtr () { }
+
+  std::shared_ptr<Bufferll> operator* () {
+    return mBuffer;
+  }
 private:
   std::shared_ptr<Bufferll> mBuffer;
 };
 
 DIAMONDCOMMONNAMESPACE_END
-  
+
 #endif
 
