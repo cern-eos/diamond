@@ -8,6 +8,7 @@ add_library( diamond_common SHARED
   Logging.cc
   RWMutex.cc
   hash/map128.cc
+  hash/spooky.cc
 )
 
 target_link_libraries( diamond_common pthread
