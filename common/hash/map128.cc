@@ -32,16 +32,18 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+
 /*----------------------------------------------------------------------------*/
 
 DIAMONDCOMMONNAMESPACE_BEGIN
 
 /*----------------------------------------------------------------------------*/
-/** 
+/**
  */
 /*----------------------------------------------------------------------------*/
 
-inline static uint64_t integerHash(__int128 h)
+inline static uint64_t
+integerHash (__int128 h)
 {
   h ^= h >> 33;
   h *= 0xff51afd7ed558ccd;
@@ -52,42 +54,47 @@ inline static uint64_t integerHash(__int128 h)
   h ^= h >> 33;
   h *= 0xc4ceb9fe1a85ec53;
   h ^= h >> 33;
-  return ( h & 0xffffffffffffffff );
+  return (h & 0xffffffffffffffff);
 }
 
-
-map128::map128 (uint64_t arraySize, const char* mapfilename)
+map128::map128 (uint64_t arraySize, const char* mapfilename, bool cnt)
 {
   // Initialize cells
-  assert((arraySize & (arraySize - 1)) == 0);   // Must be a power of 2
+  assert((arraySize & (arraySize - 1)) == 0); // Must be a power of 2
   m_arraySize = arraySize;
   m_entries = 0;
+  m_enable_cnt = cnt;
   mapfd = 0;
 
-  if (mapfilename) {
+  if (mapfilename)
+  {
     mapfd = open(mapfilename, O_RDWR);
-    assert(mapfd>0); 
+    assert(mapfd > 0);
     void *mapping;
-    mapping = mmap(0, sizeof(Entry) * arraySize,
-		   PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, mapfd, 0);
+    mapping = mmap(0, sizeof (Entry) * arraySize,
+                   PROT_READ | PROT_WRITE, MAP_SHARED, mapfd, 0);
     assert(mapping != MAP_FAILED);
     m_entries = (Entry*) mapping;
-  } else {
+  }
+  else
+  {
     m_entries = new Entry[arraySize];
   }
   Clear();
 }
 
-
-map128::~map128 () 
+map128::~map128 ()
 {
-  if (mapfd > 0) {
+  if (mapfd > 0)
+  {
     // Unmap cells
     if (m_entries)
-      munmap(m_entries, sizeof(Entry) * m_arraySize);
+      munmap(m_entries, sizeof (Entry) * m_arraySize);
     m_entries = 0;
     close(mapfd);
-  } else {
+  }
+  else
+  {
     // Delete cells
     delete[] m_entries;
   }
@@ -95,111 +102,177 @@ map128::~map128 ()
 
 
 // Basic operations
-void 
+
+bool
 map128::SetItem (__int128 key, __int128 value, int syncflag)
 {
   assert(key != 0);
   assert(value != 0);
+  assert(key != _DELETED_);
 
-  static __int128 zkey = 0 ;
+  static __int128 zkey = 0;
+  size_t l_stopper = m_arraySize << 1;
 
-  for (uint64_t idx = integerHash(key);; idx++)
+  for (uint64_t idx = integerHash(key); l_stopper != 0; idx++, l_stopper--)
   {
+    bool new_key = false;
     idx &= m_arraySize - 1;
-    
     // Load the key that was there.
-    __int128 probedKey = __atomic_load_n (&m_entries[idx].key, __ATOMIC_RELAXED);
+    __int128 probedKey = __atomic_load_n(&m_entries[idx].key, __ATOMIC_RELAXED);
+
+
     if (probedKey != key)
     {
+      // -----------------------------------------------------------------------
       // The entry was either free, or contains another key.
-      if (probedKey != 0)
-	continue;           // Usually, it contains another key. Keep probing.
-      
+      // -----------------------------------------------------------------------
+      if ((probedKey != 0))
+      {
+        continue; // Usually, it contains another key. Keep probing.
+      }
+      // -----------------------------------------------------------------------
       // The entry was free. Now let's try to take it using a CAS.
-      uint64_t prevKey = __atomic_compare_exchange(&m_entries[idx].key, &zkey, &key, true, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
-      if ((prevKey != 0) && (prevKey != key))
-	continue;       // Another thread just stole it from underneath us.
-      
-      // Either we just added the key, or another thread did.
+      // -----------------------------------------------------------------------
+      if (!__atomic_compare_exchange(&m_entries[idx].key, &zkey, &key, true, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+      {
+        // ---------------------------------------------------------------------
+        // it was taken, let's see if by chance with the same key
+        // ---------------------------------------------------------------------
+        probedKey = __atomic_load_n(&m_entries[idx].key, __ATOMIC_RELAXED);
+        if (probedKey != key)
+        {
+          continue; // Another thread just stole it from underneath us.
+        }
+      }
+      else
+      {
+        // ---------------------------------------------------------------------
+        // a new key has been set
+        // ---------------------------------------------------------------------
+        new_key = true;
+
+      }
     }
-    
+
+    // ---------------------------------------------------------------------
     // Store the value in this array entry.
-    __atomic_store (&m_entries[idx].value, &value, __ATOMIC_RELAXED);
-    if ( key == _DELETED_)
-      __atomic_fetch_sub(&m_item_deleted_cnt, 1, __ATOMIC_SEQ_CST);
-    else
-      __atomic_fetch_add(&m_item_cnt, 1, __ATOMIC_SEQ_CST);
+    // ---------------------------------------------------------------------
+    __int128 prevValue;
+    __atomic_exchange(&m_entries[idx].value, &value, &prevValue, __ATOMIC_RELAXED);
+
+    // ---------------------------------------------------------------------
+    // Count items only if they are 'new'
+    // ---------------------------------------------------------------------
+    if (new_key && m_enable_cnt)
+    {
+      if (prevValue == _DELETED_)
+        __atomic_fetch_sub(&m_item_deleted_cnt, 1, __ATOMIC_SEQ_CST);
+      else
+        __atomic_fetch_add(&m_item_cnt, 1, __ATOMIC_SEQ_CST);
+    }
 
     if (mapfd && syncflag)
-      msync(&m_entries[idx], sizeof(Entry), syncflag);
+      msync(&m_entries[idx], sizeof (Entry), syncflag);
+    return true;
   }
-  return;
+  return false;
 }
 
 void
 map128::MarkForDeletion (__int128 key, int syncflag)
 {
-  SetItem( key, _DELETED_, syncflag);
+  size_t l_stopper = m_arraySize << 1;
+  for (uint64_t idx = integerHash(key); l_stopper != 0; idx++, l_stopper--)
+  {
+    idx &= m_arraySize - 1;
+    // Load the key that was there.
+    __int128 probedKey = __atomic_load_n(&m_entries[idx].key, __ATOMIC_RELAXED);
+    if (probedKey != key)
+    {
+      if (probedKey == 0)
+        return;
+      continue;
+    }
+
+    __int128 prevValue;
+    __atomic_exchange(&m_entries[idx].value, &_DELETED_, &prevValue, __ATOMIC_RELAXED);
+    if (m_enable_cnt && (prevValue != _DELETED_))
+      __atomic_fetch_add(&m_item_deleted_cnt, 1, __ATOMIC_SEQ_CST);
+  }
 }
 
-__int128 
+__int128
 map128::GetItem (__int128 key)
 {
   assert(key != 0);
 
   for (uint64_t idx = integerHash(key);; idx++)
-    {
-      idx &= m_arraySize - 1;
+  {
+    idx &= m_arraySize - 1;
 
-      __int128_t probedKey = __atomic_load_n(&m_entries[idx].key, __ATOMIC_RELAXED);
-      if (probedKey == key)
-        return __atomic_load_n(&m_entries[idx].value, __ATOMIC_RELAXED);
-      if (probedKey == 0)
-        return 0;          
-    }
+    __int128_t probedKey = __atomic_load_n(&m_entries[idx].key, __ATOMIC_RELAXED);
+    if (probedKey == key)
+      return __atomic_load_n(&m_entries[idx].value, __ATOMIC_RELAXED);
+    if (probedKey == 0)
+      return 0;
+  }
 }
 
 uint64_t
-map128::GetItemCount ()
+map128::GetItemCount (bool effectively)
 {
   uint64_t itemCount = 0;
+  if (effectively)
+  {
+    uint64_t itemDeletedCount = 0;
+    itemCount = __atomic_load_n(&m_item_cnt, __ATOMIC_RELAXED);
+    itemDeletedCount = __atomic_load_n(&m_item_deleted_cnt, __ATOMIC_RELAXED);
+    return itemCount - itemDeletedCount;
+  }
   for (uint64_t idx = 0; idx < m_arraySize; idx++)
-    {
-      if ((__atomic_load_n(&m_entries[idx].key, __ATOMIC_RELAXED) != 0)
-          && (__atomic_load_n(&m_entries[idx].value, __ATOMIC_RELAXED) != 0))
-        itemCount++;
-    }
+  {
+    if ((__atomic_load_n(&m_entries[idx].key, __ATOMIC_RELAXED) != 0)
+        && (__atomic_load_n(&m_entries[idx].value, __ATOMIC_RELAXED) != 0))
+      itemCount++;
+  }
   return itemCount;
 }
 
-void 
+void
 map128::Clear ()
 {
   __int128 zkey = 0;
   for (uint64_t idx = 0; idx < m_arraySize; idx++)
   {
-    __atomic_store_n (&m_entries[idx].key, zkey, __ATOMIC_RELAXED);
-    __atomic_store_n (&m_entries[idx].value, zkey, __ATOMIC_RELAXED);
+    __atomic_store_n(&m_entries[idx].key, zkey, __ATOMIC_RELAXED);
+    __atomic_store_n(&m_entries[idx].value, zkey, __ATOMIC_RELAXED);
   }
-  __atomic_store_n (&m_item_cnt, 0, __ATOMIC_RELAXED);
-  __atomic_store_n (&m_item_deleted_cnt, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&m_item_cnt, 0, __ATOMIC_RELAXED);
+  __atomic_store_n(&m_item_deleted_cnt, 0, __ATOMIC_RELAXED);
 }
 
-int 
-map128::Sync(int syncflag)
+int
+map128::Sync (int syncflag)
 {
-  return msync(m_entries, sizeof(Entry) * m_arraySize, syncflag);
+  return msync(m_entries, sizeof (Entry) * m_arraySize, syncflag);
 }
 
-int 
-map128::Snapshot(const char* snapfileName, int syncflag)
+int
+map128::Snapshot (const char* snapfileName, int syncflag)
 {
-  int snapfd = open(snapfileName, O_RDWR);
-  if (snapfd >0) {
+  int snapfd = open(snapfileName, O_RDWR | O_CREAT, S_IRWXU);
+  if (snapfd > 0)
+  {
+    if (ftruncate(snapfd, sizeof (Entry) * m_arraySize))
+    {
+      return -1;
+    }
+
     void *mapping;
-    mapping = mmap(0, sizeof(Entry) * m_arraySize, PROT_READ | PROT_WRITE,
-		   MAP_SHARED | MAP_FIXED, snapfd, 0);
-    if(mapping == MAP_FAILED) {
+    mapping = mmap(0, sizeof (Entry) * m_arraySize, PROT_READ | PROT_WRITE,
+                   MAP_SHARED, snapfd, 0);
+    if (mapping == MAP_FAILED)
+    {
       return -1;
     }
     Entry* snapentry = (Entry*) mapping;
@@ -208,14 +281,20 @@ map128::Snapshot(const char* snapfileName, int syncflag)
     {
       __int128 key = __atomic_load_n(&m_entries[idx].key, __ATOMIC_RELAXED);
       __int128 val = __atomic_load_n(&m_entries[idx].value, __ATOMIC_RELAXED);
-      memcpy( snapentry, &key, sizeof(__int128) );
-      snapentry++;
-      memcpy( snapentry, &val, sizeof(__int128) );
-      snapentry++;
+      if (val != _DELETED_)
+      {
+        memcpy(&snapentry->key, &key, sizeof (__int128));
+        memcpy(&snapentry->value, &val, sizeof (__int128));
+        snapentry++;
+      }
+      else
+      {
+        snapentry++;
+      }
     }
-    if (msync(mapping, sizeof(Entry) * m_arraySize, syncflag))
+    if (msync(mapping, sizeof (Entry) * m_arraySize, syncflag))
       return -1;
-    if (munmap(m_entries, sizeof(Entry) * m_arraySize))
+    if (munmap(mapping, sizeof (Entry) * m_arraySize))
       return -1;
     if (close(snapfd))
       return -1;

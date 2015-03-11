@@ -35,12 +35,13 @@
 #define __DIAMONDCOMMON_MAP128_HH__
 
 #include "common/Namespace.hh"
+#include <sys/mman.h>
 
 DIAMONDCOMMONNAMESPACE_BEGIN
 
 class map128 {
 public:
-  
+
   const __int128 _DELETED_ = 0xffffffffffffffff;
 
   struct Entry {
@@ -55,22 +56,32 @@ private:
 
   uint64_t m_item_cnt;
   uint64_t m_item_deleted_cnt;
+  bool m_enable_cnt;
 
 public:
-  map128 (uint64_t arraySize, const char* mapefileName = 0);
+  map128 (uint64_t arraySize, const char* mapefileName = 0, bool cnt = false);
   ~map128 ();
 
   // Basic operations
-  void SetItem (__int128 key, __int128 value, int syncflag = 0);
+  bool SetItem (__int128 key, __int128 value, int syncflag = 0);
 
-  void MarkForDeletion (__int128 key, int syncflag);
+  void MarkForDeletion (__int128 key, int syncflag = 0);
 
   __int128 GetItem (__int128 key);
-  uint64_t GetItemCount ();
+  uint64_t GetItemCount (bool effectively = true);
   void Clear ();
-  int Sync(int syncflag);
-  int Snapshot(const char* snapfileName, int syncflag = 0);
+  int Sync (int syncflag);
+  int Snapshot (const char* snapfileName, int syncflag = 0);
 
+  void
+  EnableCnt () {
+    m_enable_cnt = true;
+  }
+
+  void
+  DisableCnt () {
+    m_enable_cnt = false;
+  }
 };
 
 DIAMONDCOMMONNAMESPACE_END
