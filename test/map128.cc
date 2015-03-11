@@ -113,17 +113,71 @@ TEST (map128, mapdelete)
   EXPECT_EQ(0, lkmap.GetItemCount(false));
 
   bool result = true;
-  __int128 key = 0xabcdabcdabcdabcd;
-  __int128 val = 0xcafecafecafecafe;
-  for (size_t i = 0; i < 512 * 1024; i++)
   {
-    key++;
-    val++;
-    result &= lkmap.SetItem(key, val);
-    lkmap.MarkForDeletion(key);
+    __int128 key = 0xabcdabcdabcdabcd;
+    __int128 val = 0xcafecafecafecafe;
+    for (size_t i = 0; i < 512 * 1024; i++)
+    {
+      key++;
+      val++;
+      result &= lkmap.SetItem(key, val);
+    }
   }
+  {
+    __int128 key = 0xabcdabcdabcdabcd;
+    __int128 val = 0xcafecafecafecafe;
+    for (size_t i = 0; i < 512 * 1024; i++)
+    {
+      key++;
+      val++;
+      lkmap.DeleteItem(key);
+    }
+  }
+
+  EXPECT_EQ(true, result);
   EXPECT_EQ(0, lkmap.GetItemCount(true));
   EXPECT_EQ(512 * 1024, lkmap.GetItemCount(false));
+  EXPECT_EQ(0, lkmap.Snapshot("/tmp/map128.deleted.async.lkmap", MS_ASYNC));
 }
 
+TEST (map128, largemap)
+{
+  diamond::common::Timing tm1("largemap");
+  map128 lkmap(32 * 1024 * 1024, 0, true);
+  COMMONTIMING("creation", &tm1);
 
+  EXPECT_EQ(0, lkmap.GetItemCount(true));
+  EXPECT_EQ(0, lkmap.GetItemCount(false));
+
+  COMMONTIMING("get-item-count", &tm1);
+
+  bool result = true;
+  __int128 key = 0x1234567887654321;
+  __int128 val = 0xabcddcbaabcddcba;
+  key <<= 64;
+  val <<= 64;
+  key += 0x1234567887654321;
+  val += 0xabcddcbaabcddcba;
+  if (!key)
+    key++;
+  if (!val)
+    val++;
+  for (size_t i = 0; i < 32 * 512 * 1024; i++)
+  {
+    result &= lkmap.SetItem(key, val);
+    key++;
+    val++;
+  }
+  COMMONTIMING("set-item", &tm1);
+
+  EXPECT_EQ(true, result);
+  EXPECT_EQ(32 * 512 * 1024, lkmap.GetItemCount(true));
+  EXPECT_EQ(32 * 512 * 1024, lkmap.GetItemCount(false));
+  COMMONTIMING("get-item-count", &tm1);
+  EXPECT_EQ(0, lkmap.Snapshot("/tmp/map128.large.async.lkmap", MS_ASYNC));
+  COMMONTIMING("snapshot-async", &tm1);
+  EXPECT_EQ(0, lkmap.Snapshot("/tmp/map128.large.sync.lkmap", MS_SYNC));
+  COMMONTIMING("snapshot-sync", &tm1);
+
+  tm1.Print();
+}

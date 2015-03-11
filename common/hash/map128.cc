@@ -5,7 +5,7 @@
 
 /************************************************************************
  * DIAMOND - the CERN Disk Storage System                                   *
- * Copyright (C) 2011 CERN/Switzerland                                  *
+ * Copyright (C) 2015 CERN/Switzerland                                  *
  *                                                                      *
  * This program is free software: you can redistribute it and/or modify *
  * it under the terms of the GNU General Public License as published by *
@@ -37,6 +37,7 @@
 
 DIAMONDCOMMONNAMESPACE_BEGIN
 
+
 /*----------------------------------------------------------------------------*/
 /**
  */
@@ -65,6 +66,10 @@ map128::map128 (uint64_t arraySize, const char* mapfilename, bool cnt)
   m_entries = 0;
   m_enable_cnt = cnt;
   mapfd = 0;
+
+  _DELETED_ =  (0xffffffffffffffff);
+  _DELETED_ <<=64;
+  _DELETED_ |= (0xffffffffffffffff);
 
   if (mapfilename)
   {
@@ -110,7 +115,6 @@ map128::SetItem (__int128 key, __int128 value, int syncflag)
   assert(value != 0);
   assert(key != _DELETED_);
 
-  static __int128 zkey = 0;
   size_t l_stopper = m_arraySize << 1;
 
   for (uint64_t idx = integerHash(key); l_stopper != 0; idx++, l_stopper--)
@@ -120,20 +124,19 @@ map128::SetItem (__int128 key, __int128 value, int syncflag)
     // Load the key that was there.
     __int128 probedKey = __atomic_load_n(&m_entries[idx].key, __ATOMIC_RELAXED);
 
-
     if (probedKey != key)
     {
       // -----------------------------------------------------------------------
       // The entry was either free, or contains another key.
       // -----------------------------------------------------------------------
-      if ((probedKey != 0))
+      if ((probedKey != 0) && (probedKey != _DELETED_))
       {
         continue; // Usually, it contains another key. Keep probing.
       }
       // -----------------------------------------------------------------------
       // The entry was free. Now let's try to take it using a CAS.
       // -----------------------------------------------------------------------
-      if (!__atomic_compare_exchange(&m_entries[idx].key, &zkey, &key, true, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+      if (!__atomic_compare_exchange(&m_entries[idx].key, (probedKey != _DELETED_)?&_ZERO_:&_DELETED_, &key, true, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
       {
         // ---------------------------------------------------------------------
         // it was taken, let's see if by chance with the same key
@@ -150,25 +153,23 @@ map128::SetItem (__int128 key, __int128 value, int syncflag)
         // a new key has been set
         // ---------------------------------------------------------------------
         new_key = true;
-
       }
     }
 
     // ---------------------------------------------------------------------
     // Store the value in this array entry.
     // ---------------------------------------------------------------------
-    __int128 prevValue;
-    __atomic_exchange(&m_entries[idx].value, &value, &prevValue, __ATOMIC_RELAXED);
+    __atomic_store(&m_entries[idx].value, &value, __ATOMIC_RELAXED);
 
     // ---------------------------------------------------------------------
     // Count items only if they are 'new'
     // ---------------------------------------------------------------------
     if (new_key && m_enable_cnt)
     {
-      if (prevValue == _DELETED_)
-        __atomic_fetch_sub(&m_item_deleted_cnt, 1, __ATOMIC_SEQ_CST);
-      else
+      if ( probedKey != _DELETED_ )
         __atomic_fetch_add(&m_item_cnt, 1, __ATOMIC_SEQ_CST);
+      else
+        __atomic_fetch_sub(&m_item_deleted_cnt, 1, __ATOMIC_SEQ_CST);
     }
 
     if (mapfd && syncflag)
@@ -179,7 +180,7 @@ map128::SetItem (__int128 key, __int128 value, int syncflag)
 }
 
 void
-map128::MarkForDeletion (__int128 key, int syncflag)
+map128::DeleteItem (__int128 key, int syncflag)
 {
   size_t l_stopper = m_arraySize << 1;
   for (uint64_t idx = integerHash(key); l_stopper != 0; idx++, l_stopper--)
@@ -194,10 +195,13 @@ map128::MarkForDeletion (__int128 key, int syncflag)
       continue;
     }
 
-    __int128 prevValue;
-    __atomic_exchange(&m_entries[idx].value, &_DELETED_, &prevValue, __ATOMIC_RELAXED);
-    if (m_enable_cnt && (prevValue != _DELETED_))
-      __atomic_fetch_add(&m_item_deleted_cnt, 1, __ATOMIC_SEQ_CST);
+    if (__atomic_compare_exchange(&m_entries[idx].key, &probedKey, &_DELETED_, true, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) 
+    {
+      if (m_enable_cnt) 
+      {
+	__atomic_fetch_add(&m_item_deleted_cnt, 1, __ATOMIC_SEQ_CST);
+      }
+    }
   }
 }
 
@@ -241,11 +245,10 @@ map128::GetItemCount (bool effectively)
 void
 map128::Clear ()
 {
-  __int128 zkey = 0;
   for (uint64_t idx = 0; idx < m_arraySize; idx++)
   {
-    __atomic_store_n(&m_entries[idx].key, zkey, __ATOMIC_RELAXED);
-    __atomic_store_n(&m_entries[idx].value, zkey, __ATOMIC_RELAXED);
+    __atomic_store_n(&m_entries[idx].key, _ZERO_, __ATOMIC_RELAXED);
+    __atomic_store_n(&m_entries[idx].value, _ZERO_, __ATOMIC_RELAXED);
   }
   __atomic_store_n(&m_item_cnt, 0, __ATOMIC_RELAXED);
   __atomic_store_n(&m_item_deleted_cnt, 0, __ATOMIC_RELAXED);

@@ -4,8 +4,8 @@
 // ----------------------------------------------------------------------
 
 /************************************************************************
- * DIAMOND - the CERN Disk Storage System                                   *
- * Copyright (C) 2011 CERN/Switzerland                                  *
+ * DIAMOND - the CERN Disk Storage System                               *
+ * Copyright (C) 2015 CERN/Switzerland                                  *
  *                                                                      *
  * This program is free software: you can redistribute it and/or modify *
  * it under the terms of the GNU General Public License as published by *
@@ -42,7 +42,8 @@ DIAMONDCOMMONNAMESPACE_BEGIN
 class map128 {
 public:
 
-  const __int128 _DELETED_ = 0xffffffffffffffff;
+  __int128 _DELETED_;
+  const __int128 _ZERO_ = 0;
 
   struct Entry {
     __int128 key;
@@ -65,7 +66,7 @@ public:
   // Basic operations
   bool SetItem (__int128 key, __int128 value, int syncflag = 0);
 
-  void MarkForDeletion (__int128 key, int syncflag = 0);
+  void DeleteItem (__int128 key, int syncflag = 0);
 
   __int128 GetItem (__int128 key);
   uint64_t GetItemCount (bool effectively = true);
