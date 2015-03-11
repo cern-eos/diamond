@@ -1,11 +1,11 @@
 // ----------------------------------------------------------------------
-// File: BufferPtr.hh
+// File: BufferPtrLockFree.hh
 // Author: Andreas-Joachim Peters - CERN
 // ----------------------------------------------------------------------
 
 /************************************************************************
  * DIAMOND - the CERN Disk Storage System                                   *
- * Copyright (C) 2011 CERN/Switzerland                                  *
+ * Copyright (C) 2015 CERN/Switzerland                                  *
  *                                                                      *
  * This program is free software: you can redistribute it and/or modify *
  * it under the terms of the GNU General Public License as published by *
@@ -22,16 +22,16 @@
  ************************************************************************/
 
 /**
- * @file   BufferPtr.hh
+ * @file   Buffer.hh
  *
- * @brief  Class implementing buffer handling (thread safe)
+ * @brief  Class implementing lock free buffer handling
  *
  *
  */
 
 
-#ifndef __DIAMONDCOMMON_BUFFER_HH__
-#define __DIAMONDCOMMON_BUFFER_HH__
+#ifndef __DIAMONDCOMMON_BUFFERLOCKFREE_HH__
+#define __DIAMONDCOMMON_BUFFERLOCKFREE_HH__
 
 #include "Namespace.hh"
 #include "RWMutex.hh"
@@ -41,10 +41,10 @@
 
 DIAMONDCOMMONNAMESPACE_BEGIN
 
-class Bufferll : public std::vector<char> {
+class Bufferll_lf : public std::vector<char> {
 public:
 
-  Bufferll (unsigned size = 0, unsigned capacity = 0) {
+  Bufferll_lf (unsigned size = 0, unsigned capacity = 0) {
     if (size)
       resize(size);
     if (capacity)
@@ -52,7 +52,7 @@ public:
   }
 
   virtual
-  ~Bufferll () { }
+  ~Bufferll_lf () { }
 
   //------------------------------------------------------------------------
   //! Add data
@@ -60,7 +60,6 @@ public:
 
   size_t
   putData (const void *ptr, size_t dataSize) {
-    RWMutexWriteLock dLock(mMutex);
     size_t currSize = size();
     resize(currSize + dataSize);
     memcpy(&operator[](currSize), ptr, dataSize);
@@ -69,7 +68,6 @@ public:
 
   off_t
   writeData (const void *ptr, off_t offset, size_t dataSize) {
-    RWMutexWriteLock dLock(mMutex);
     size_t currSize = size();
     if ((offset + dataSize) > currSize) {
       currSize = offset + dataSize;
@@ -88,7 +86,6 @@ public:
 
   size_t
   readData (void *ptr, off_t offset, size_t dataSize) {
-    RWMutexReadLock dLock(mMutex);
     if (offset + dataSize > size()) {
       return 0;
     }
@@ -102,7 +99,6 @@ public:
 
   size_t
   peekData (char* &ptr, off_t offset, size_t dataSize) {
-    mMutex.LockRead();
     ptr = &(operator[](0)) + offset;
     int avail = size() - offset;
     if (((int) dataSize > avail)) {
@@ -120,7 +116,7 @@ public:
 
   void
   releasePeek () {
-    mMutex.UnLockRead();
+    
   }
 
   //------------------------------------------------------------------------
@@ -137,21 +133,21 @@ private:
   RWMutex mMutex;
 };
 
-class BufferPtr {
+class BufferPtrLockFree {
 public:
 
-  BufferPtr (unsigned size = 0) {
-    mBuffer = std::make_shared<Bufferll> (size);
+  BufferPtrLockFree (unsigned size = 0) {
+    mBuffer = std::make_shared<Bufferll_lf> (size);
   }
 
   virtual
-  ~BufferPtr () { }
+  ~BufferPtrLockFree () { }
 
-  std::shared_ptr<Bufferll> operator* () {
+  std::shared_ptr<Bufferll_lf> operator* () {
     return mBuffer;
   }
 private:
-  std::shared_ptr<Bufferll> mBuffer;
+  std::shared_ptr<Bufferll_lf> mBuffer;
 };
 
 DIAMONDCOMMONNAMESPACE_END
