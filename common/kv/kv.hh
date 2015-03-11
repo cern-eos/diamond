@@ -62,12 +62,38 @@ public:
 
   kv_stat_t m_stat;
 
+  typedef struct kv_item_header {
+    uint32_t m_magic;
+    uint32_t m_ctime;
+    uint32_t m_ctime_ns;
+    uint32_t m_crc32c;
+    uint32_t m_size;
+    uint16_t m_key_length;
+    uint16_t m_flags;
+    uint32_t m_value_length;
+    uint32_t m_reserved;
+  } kv_item_header_t;
+  
+  typedef struct kv_item_offsets {
+    char* key;
+    char* value;
+  } kv_item_offsets_t;
+  
+  typedef struct kv_item_trailer {
+    uint32_t m_crc32c;
+    uint32_t m_magic;
+  } kv_item_crc_t;
+
   class kv_item {
   public:
     kv_item(){}
     ~kv_item(){}
+
+    uint32_t grab(void* ptr) { return 0;}
+
   private:
-    BufferPtrLockFree m_buf;
+    BufferPtrLockFree m_raw_buf;
+    BufferPtrLockFree m_dec_buf;
   };
 
 private:
