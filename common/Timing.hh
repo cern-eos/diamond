@@ -22,10 +22,10 @@
  ************************************************************************/
 /**
  * @file   Timing.hh
- * 
+ *
  * @brief  Class providing real-time code measurements.
- * 
- * 
+ *
+ *
  */
 
 
@@ -42,7 +42,7 @@ DIAMONDCOMMONNAMESPACE_BEGIN
 
 /*----------------------------------------------------------------------------*/
 //! Class implementing comfortable time measurements through methods/functions
-//! 
+//!
 //! Example
 //! diamond::common::Timing tm("Test");
 //! COMMONTIMING("START",&tm);
@@ -55,8 +55,7 @@ DIAMONDCOMMONNAMESPACE_BEGIN
 //! tm.Print();
 //! fprintf(stdout,"realtime = %.02f", tm.RealTime());
 /*----------------------------------------------------------------------------*/
-class Timing
-{
+class Timing {
 public:
   struct timeval tv;
   std::string tag;
@@ -68,8 +67,7 @@ public:
   //! Constructor - used only internally
   // ---------------------------------------------------------------------------
 
-  Timing (const char* name, struct timeval &i_tv)
-  {
+  Timing (const char* name, struct timeval &i_tv) {
     memcpy(&tv, &i_tv, sizeof (struct timeval));
     tag = name;
     next = 0;
@@ -79,8 +77,7 @@ public:
   //! Constructor - tag is used as the name for the measurement in Print
   // ---------------------------------------------------------------------------
 
-  Timing (const char* i_maintag)
-  {
+  Timing (const char* i_maintag) {
     tag = "BEGIN";
     next = 0;
     ptr = this;
@@ -91,62 +88,56 @@ public:
   // ---------------------------------------------------------------------------
   //! Get time elapsed between the two tags in miliseconds
   // ---------------------------------------------------------------------------
+
   float
-  GetTagTimelapse(const std::string& tagBegin, const std::string& tagEnd)
-  {
+  GetTagTimelapse (const std::string& tagBegin, const std::string& tagEnd) {
     float time_elapsed = 0;
     Timing* ptr = this->next;
     Timing* ptrBegin = 0;
     Timing* ptrEnd = 0;
-    
-    while (ptr)
-    {
-      if (tagBegin.compare(ptr->tag.c_str()) == 0)
-      {
+
+    while (ptr) {
+      if (tagBegin.compare(ptr->tag.c_str()) == 0) {
         ptrBegin = ptr;
       }
 
-      if (tagEnd.compare(ptr->tag.c_str()) == 0)
-      {
+      if (tagEnd.compare(ptr->tag.c_str()) == 0) {
         ptrEnd = ptr;
       }
 
       if (ptrBegin && ptrEnd) break;
-      
+
       ptr = ptr->next;
     }
 
-    if (ptrBegin && ptrEnd)
-    {
-      time_elapsed = static_cast<float>(((ptrEnd->tv.tv_sec - ptrBegin->tv.tv_sec) *1000000 +
-                                       (ptrEnd->tv.tv_usec - ptrBegin->tv.tv_usec)) / 1000.0);
+    if (ptrBegin && ptrEnd) {
+      time_elapsed = static_cast<float> (((ptrEnd->tv.tv_sec - ptrBegin->tv.tv_sec) *1000000 +
+                                          (ptrEnd->tv.tv_usec - ptrBegin->tv.tv_usec)) / 1000.0);
     }
-    
+
     return time_elapsed;
   }
-  
-  
+
+
   // ---------------------------------------------------------------------------
   //! Print method to display measurements on STDERR
   // ---------------------------------------------------------------------------
 
   void
-  Print ()
-  {
+  Print () {
     char msg[512];
     Timing* p = this->next;
     Timing* n;
     std::cerr << std::endl;
-    while ((n = p->next))
-    {
+    while ((n = p->next)) {
 
-      sprintf(msg, "                                        [%12s] %12s<=>%-12s : %.03f\n", maintag.c_str(), p->tag.c_str(), n->tag.c_str(), (float) ((n->tv.tv_sec - p->tv.tv_sec) *1000000 + (n->tv.tv_usec - p->tv.tv_usec)) / 1000.0);
+      sprintf(msg, "                                        [ %12s ] %20s <=> %-20s : %.03f\n", maintag.c_str(), p->tag.c_str(), n->tag.c_str(), (float) ((n->tv.tv_sec - p->tv.tv_sec) *1000000 + (n->tv.tv_usec - p->tv.tv_usec)) / 1000.0);
       std::cerr << msg;
       p = n;
     }
     n = p;
     p = this->next;
-    sprintf(msg, "                                        =%12s= %12s<=>%-12s : %.03f\n", maintag.c_str(), p->tag.c_str(), n->tag.c_str(), (float) ((n->tv.tv_sec - p->tv.tv_sec) *1000000 + (n->tv.tv_usec - p->tv.tv_usec)) / 1000.0);
+    sprintf(msg, "                                        = %12s = %20s <=> %-20s : %.03f\n", maintag.c_str(), p->tag.c_str(), n->tag.c_str(), (float) ((n->tv.tv_sec - p->tv.tv_sec) *1000000 + (n->tv.tv_usec - p->tv.tv_usec)) / 1000.0);
     std::cerr << msg;
   }
 
@@ -155,12 +146,10 @@ public:
   // ---------------------------------------------------------------------------
 
   double
-  RealTime ()
-  {
+  RealTime () {
     Timing* p = this->next;
     Timing* n;
-    while ((n = p->next))
-    {
+    while ((n = p->next)) {
       p = n;
     }
     n = p;
@@ -173,8 +162,7 @@ public:
   // ---------------------------------------------------------------------------
 
   virtual
-  ~Timing ()
-  {
+  ~Timing () {
     Timing* n = next;
     if (n) delete n;
   };
@@ -184,8 +172,7 @@ public:
   // ---------------------------------------------------------------------------
 
   static void
-  GetTimeSpec (struct timespec &ts)
-  {
+  GetTimeSpec (struct timespec &ts) {
 #ifdef __APPLE__
     struct timeval tv;
     gettimeofday(&tv, 0);
@@ -201,8 +188,7 @@ public:
   // ---------------------------------------------------------------------------
 
   static std::string
-  UnixTimstamp_to_ISO8601 (time_t now)
-  {
+  UnixTimstamp_to_ISO8601 (time_t now) {
     struct tm *utctime;
     char str[21];
     utctime = gmtime(&now);
@@ -211,12 +197,11 @@ public:
   }
 
   // ---------------------------------------------------------------------------
-  //! Time Conversion Function for strings to ISO8601 time 
+  //! Time Conversion Function for strings to ISO8601 time
   // ---------------------------------------------------------------------------
 
   static time_t
-  ISO8601_to_UnixTimestamp (std::string iso)
-  {
+  ISO8601_to_UnixTimestamp (std::string iso) {
     tzset();
     char temp[64];
     memset(temp, 0, sizeof (temp));
@@ -231,8 +216,8 @@ public:
   }
 
   static
-  std::string utctime(time_t ttime)
-  {
+  std::string
+  utctime (time_t ttime) {
     struct tm utc;
     gmtime_r(&ttime, &utc);
     static const char wday_name[][4] = {
@@ -244,13 +229,13 @@ public:
     };
     static char result[40];
     sprintf(result, "%.3s, %02d %.3s %d %.2d:%.2d:%.2d GMT",
-	    wday_name[utc.tm_wday],
-	    utc.tm_mday,
-	    mon_name[utc.tm_mon],
-	    1900 + utc.tm_year,
-	    utc.tm_hour,
-	    utc.tm_min, 
-	    utc.tm_sec);
+            wday_name[utc.tm_wday],
+            utc.tm_mday,
+            mon_name[utc.tm_mon],
+            1900 + utc.tm_year,
+            utc.tm_hour,
+            utc.tm_min,
+            utc.tm_sec);
     return std::string(result);
   }
 };
@@ -265,7 +250,7 @@ public:
     gettimeofday(&tp, &tz);					\
     (__LIST__)->ptr->next=new diamond::common::Timing(__ID__,tp);	\
     (__LIST__)->ptr = (__LIST__)->ptr->next;			\
-  } while(0);							
+  } while(0);
 
 
 DIAMONDCOMMONNAMESPACE_END
