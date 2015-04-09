@@ -44,6 +44,7 @@ TEST (map128, mapset)
 {
   diamond::common::Timing tm1("map128");
   map128 lkmap(1024 * 1024, 0, true);
+  lkmap.Clear();
   COMMONTIMING("creation", &tm1);
 
   EXPECT_EQ(0, lkmap.GetItemCount(true));
@@ -77,14 +78,13 @@ TEST (map128, mapset)
   EXPECT_EQ(0, lkmap.Snapshot("/tmp/map128.async.lkmap", MS_ASYNC));
   COMMONTIMING("snapshot-async", &tm1);
   EXPECT_EQ(0, lkmap.Snapshot("/tmp/map128.sync.lkmap", MS_SYNC));
-  COMMONTIMING("snapshot-sync", &tm1);
 
-  tm1.Print();
 }
 
 TEST (map128, mapoverflow)
 {
   map128 lkmap(1024, 0, true);
+  lkmap.Clear();
   bool result = true;
   __int128 key = 0xabcdabcdabcdabcd;
   __int128 val = 0xcafecafecafecafe;
@@ -109,6 +109,7 @@ TEST (map128, mapoverflow)
 TEST (map128, mapdelete)
 {
   map128 lkmap(1024 * 1024, 0, true);
+  lkamp.Clear();
   EXPECT_EQ(0, lkmap.GetItemCount(true));
   EXPECT_EQ(0, lkmap.GetItemCount(false));
 
@@ -144,6 +145,7 @@ TEST (map128, largemap)
 {
   diamond::common::Timing tm1("largemap");
   map128 lkmap(32 * 1024 * 1024, 0, true);
+  lkmap.Clear();
   COMMONTIMING("creation", &tm1);
 
   EXPECT_EQ(0, lkmap.GetItemCount(true));

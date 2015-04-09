@@ -32,6 +32,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <iostream>
 
 /*----------------------------------------------------------------------------*/
 
@@ -65,15 +66,30 @@ map128::map128 (uint64_t arraySize, const char* mapfilename, bool cnt)
   m_arraySize = arraySize;
   m_entries = 0;
   m_enable_cnt = cnt;
+  m_item_cnt = 0;
+  m_item_deleted_cnt = 0;
+
   mapfd = 0;
 
-  _DELETED_ =  (0xffffffffffffffff);
-  _DELETED_ <<=64;
+  _DELETED_ = (0xffffffffffffffff);
+  _DELETED_ <<= 64;
   _DELETED_ |= (0xffffffffffffffff);
 
   if (mapfilename)
   {
+    std::cout << "opening " << mapfilename << std::endl;
     mapfd = open(mapfilename, O_RDWR);
+    if ((mapfd < 0) && (errno == ENOENT))
+    {
+      std::cout << "creating " << mapfilename << std::endl;
+      mapfd = open(mapfilename, O_RDWR | O_CREAT, S_IRWXU);
+      if (ftruncate(mapfd, sizeof (Entry) * arraySize))
+      {
+        close(mapfd);
+        mapfd = -1;
+      }
+    }
+
     assert(mapfd > 0);
     void *mapping;
     mapping = mmap(0, sizeof (Entry) * arraySize,
@@ -85,7 +101,6 @@ map128::map128 (uint64_t arraySize, const char* mapfilename, bool cnt)
   {
     m_entries = new Entry[arraySize];
   }
-  Clear();
 }
 
 map128::~map128 ()
@@ -111,8 +126,17 @@ map128::~map128 ()
 bool
 map128::SetItem (__int128 key, __int128 value, int syncflag)
 {
+  return SetItem(key, value, syncflag, 0, false);
+}
+
+bool
+map128::SetItem (__int128 key,
+                 __int128 value,
+                 int syncflag,
+                 __int128 known_value,
+                 bool condition)
+{
   assert(key != 0);
-  assert(value != 0);
   assert(key != _DELETED_);
 
   size_t l_stopper = m_arraySize << 1;
@@ -129,14 +153,15 @@ map128::SetItem (__int128 key, __int128 value, int syncflag)
       // -----------------------------------------------------------------------
       // The entry was either free, or contains another key.
       // -----------------------------------------------------------------------
-      if ((probedKey != 0) && (probedKey != _DELETED_))
+      if ((probedKey != 0))
+        //if ((probedKey != 0) && (probedKey != _DELETED_)) // TODO: don't reuse deleted keys  in this way!
       {
         continue; // Usually, it contains another key. Keep probing.
       }
       // -----------------------------------------------------------------------
       // The entry was free. Now let's try to take it using a CAS.
       // -----------------------------------------------------------------------
-      if (!__atomic_compare_exchange(&m_entries[idx].key, (probedKey != _DELETED_)?&_ZERO_:&_DELETED_, &key, true, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+      if (!__atomic_compare_exchange(&m_entries[idx].key, (probedKey != _DELETED_) ? &_ZERO_ : &_DELETED_, &key, true, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
       {
         // ---------------------------------------------------------------------
         // it was taken, let's see if by chance with the same key
@@ -157,16 +182,25 @@ map128::SetItem (__int128 key, __int128 value, int syncflag)
     }
 
     // ---------------------------------------------------------------------
-    // Store the value in this array entry.
+    // Store the value in this array entry (with/without pre-condition)
     // ---------------------------------------------------------------------
-    __atomic_store(&m_entries[idx].value, &value, __ATOMIC_RELAXED);
-
+    if (condition)
+    {
+      if (!__atomic_compare_exchange(&m_entries[idx].value, &known_value, &value, true, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
+      {
+        return false;
+      }
+    }
+    else
+    {
+      __atomic_store(&m_entries[idx].value, &value, __ATOMIC_RELAXED);
+    }
     // ---------------------------------------------------------------------
     // Count items only if they are 'new'
     // ---------------------------------------------------------------------
     if (new_key && m_enable_cnt)
     {
-      if ( probedKey != _DELETED_ )
+      if (probedKey != _DELETED_)
         __atomic_fetch_add(&m_item_cnt, 1, __ATOMIC_SEQ_CST);
       else
         __atomic_fetch_sub(&m_item_deleted_cnt, 1, __ATOMIC_SEQ_CST);
@@ -195,18 +229,18 @@ map128::DeleteItem (__int128 key, int syncflag)
       continue;
     }
 
-    if (__atomic_compare_exchange(&m_entries[idx].key, &probedKey, &_DELETED_, true, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) 
+    if (__atomic_compare_exchange(&m_entries[idx].key, &probedKey, &_DELETED_, true, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST))
     {
-      if (m_enable_cnt) 
+      if (m_enable_cnt)
       {
-	__atomic_fetch_add(&m_item_deleted_cnt, 1, __ATOMIC_SEQ_CST);
+        __atomic_fetch_add(&m_item_deleted_cnt, 1, __ATOMIC_SEQ_CST);
       }
     }
   }
 }
 
 __int128
-map128::GetItem (__int128 key)
+map128::GetItem (__int128 key, bool &nokey)
 {
   assert(key != 0);
 
@@ -218,7 +252,10 @@ map128::GetItem (__int128 key)
     if (probedKey == key)
       return __atomic_load_n(&m_entries[idx].value, __ATOMIC_RELAXED);
     if (probedKey == 0)
+    {
+      nokey = true;
       return 0;
+    }
   }
 }
 
@@ -239,6 +276,8 @@ map128::GetItemCount (bool effectively)
         && (__atomic_load_n(&m_entries[idx].value, __ATOMIC_RELAXED) != 0))
       itemCount++;
   }
+  if (!m_item_cnt)
+    __atomic_store_n(&m_item_cnt, itemCount, __ATOMIC_RELAXED);
   return itemCount;
 }
 
@@ -266,7 +305,7 @@ map128::Snapshot (const char* snapfileName, int syncflag)
   int snapfd = open(snapfileName, O_RDWR | O_CREAT, S_IRWXU);
   if (snapfd > 0)
   {
-    if (ftruncate(snapfd, sizeof (Entry) * m_arraySize))
+    if (ftruncate(snapfd, 1ll * sizeof (Entry) * m_arraySize))
     {
       return -1;
     }
@@ -295,8 +334,9 @@ map128::Snapshot (const char* snapfileName, int syncflag)
         snapentry++;
       }
     }
-    if (msync(mapping, sizeof (Entry) * m_arraySize, syncflag))
-      return -1;
+    if (syncflag)
+      if (msync(mapping, sizeof (Entry) * m_arraySize, syncflag))
+        return -1;
     if (munmap(mapping, sizeof (Entry) * m_arraySize))
       return -1;
     if (close(snapfd))

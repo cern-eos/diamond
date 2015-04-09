@@ -1,5 +1,5 @@
 // ----------------------------------------------------------------------
-// File: map128.hh
+// File: longstring.hh
 // Author: Andreas-Joachim Peters - CERN
 // ----------------------------------------------------------------------
 
@@ -23,70 +23,30 @@
 
 
 /**
- * @file   map128.hh
+ * @file   longstring.hh
  *
- * @brief  Class implementing a lock free 128bit->128bit hash map
+ * @brief  Class implementing fast number to string conversions
  *
  *
  */
 
 
-#ifndef __DIAMONDCOMMON_MAP128_HH__
-#define __DIAMONDCOMMON_MAP128_HH__
+#ifndef __DIAMONDCOMMON_LONGSTRING_HH__
+#define __DIAMONDCOMMON_LONGSTRING_HH__
 
-#include "common/Namespace.hh"
-#include <sys/mman.h>
+#include <stdint.h>
 
 DIAMONDCOMMONNAMESPACE_BEGIN
 
-class map128 {
+class longstring {
 public:
+  static char*
+  unsigned_to_decimal (uint64_t number, char* buffer);
 
-  __int128 _DELETED_;
-
-  const __int128 _ZERO_ = 0;
-
-  struct Entry {
-    __int128 key;
-    __int128 value;
-  } __attribute__ ((aligned (16)));
-
-private:
-  Entry* m_entries;
-  uint64_t m_arraySize;
-  int mapfd;
-
-  uint64_t m_item_cnt;
-  uint64_t m_item_deleted_cnt;
-  bool m_enable_cnt;
-
-public:
-  map128 (uint64_t arraySize, const char* mapefileName = 0, bool cnt = false);
-
-  ~map128 ();
-
-  // Basic operations
-  bool SetItem (__int128 key, __int128 value, int syncflag = 0);
-  bool SetItem (__int128 key, __int128 value, int syncflag, __int128 known_value, bool condition);
-
-  void DeleteItem (__int128 key, int syncflag = 0);
-
-  __int128 GetItem (__int128 key, bool &nokey);
-  uint64_t GetItemCount (bool effectively = true);
-  void Clear ();
-  int Sync (int syncflag);
-  int Snapshot (const char* snapfileName, int syncflag = 0);
-
-  void
-  EnableCnt () {
-    m_enable_cnt = true;
-  }
-
-  void
-  DisableCnt () {
-    m_enable_cnt = false;
-  }
+  static char*
+  to_decimal (int64_t number, char* buffer);
 };
+
 
 DIAMONDCOMMONNAMESPACE_END
 

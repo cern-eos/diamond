@@ -9,10 +9,11 @@ add_library( diamond_common SHARED
   RWMutex.cc
   hash/map128.cc
   hash/spooky.cc
+  hash/longstring.cc
   kv/kv.cc
 )
 
-target_link_libraries( diamond_common pthread
+target_link_libraries( diamond_common pthread rt
 )
 
 
