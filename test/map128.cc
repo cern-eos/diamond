@@ -109,7 +109,7 @@ TEST (map128, mapoverflow)
 TEST (map128, mapdelete)
 {
   map128 lkmap(1024 * 1024, 0, true);
-  lkamp.Clear();
+  lkmap.Clear();
   EXPECT_EQ(0, lkmap.GetItemCount(true));
   EXPECT_EQ(0, lkmap.GetItemCount(false));
 
