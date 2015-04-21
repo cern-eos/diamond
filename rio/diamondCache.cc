@@ -6,6 +6,7 @@
  */
 
 #include "diamondCache.hh"
+#include <iostream>
 
 DIAMONDRIONAMESPACE_BEGIN
 
@@ -13,7 +14,9 @@ diamondCache::diamondCache (std::string mountpoint) { }
 
 diamondCache::diamondCache (const diamondCache& orig) { }
 
-diamondCache::~diamondCache () { }
+diamondCache::~diamondCache () { 
+}
+
 
 
 diamondCache::diamondFilePtr 
@@ -30,7 +33,7 @@ diamondCache::getFile(diamond_ino_t ino, bool update_lru, bool create, std::stri
       return 0;
 
     // create a new one
-    diamondFilePtr f = std::make_shared<diamondFile>(new diamondFile(ino,name));
+    diamondFilePtr f = std::make_shared<diamondFile>(ino,name);
     mFilesLRU.push_front(ino);
     mFiles[ino] = std::make_pair( mFilesLRU.begin(), f );
 
@@ -52,7 +55,7 @@ diamondCache::getDir(diamond_ino_t ino, bool update_lru, bool create, std::strin
     if (!create)
       return 0;
     // create a new one
-    diamondDirPtr d = std::make_shared<diamondDir>(new diamondDir(ino,name));
+    diamondDirPtr d = std::make_shared<diamondDir>(ino,name);
     mDirsLRU.push_front(ino);
     mDirs[ino] = std::make_pair( mDirsLRU.begin(), d );
 
@@ -83,7 +86,6 @@ diamondCache::rmDir (diamond_ino_t ino)
   if (mDirs.count(ino)) {
     mDirsLRU.erase(mDirs[ino].first);
     mDirs.erase(ino);
-
     return 0;
   }
   return ENOENT;
