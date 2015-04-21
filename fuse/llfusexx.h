@@ -102,6 +102,8 @@ namespace llfusexx
 	operations.getxattr     = &T::getxattr;
 	operations.listxattr    = &T::listxattr;
 	operations.removexattr  = &T::removexattr;
+	operations.symlink      = &T::symlink;
+	operations.readlink     = &T::readlink;
       }
 
       //------------------------------------------------------------------------

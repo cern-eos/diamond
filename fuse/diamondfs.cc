@@ -18,6 +18,8 @@ struct statvfs stat_fs;
 //!   g++ -Wall `pkg-config fuse --cflags --libs` os.cpp -o os
 //------------------------------------------------------------------------------
 
+#define DIAMONDFS_XATTR_REALINK_SIZE 0xfffffffe
+
 using namespace diamond::rio;
 
 class diamondfs : public llfusexx::fs<diamondfs> , public diamond::rio::diamondCache
@@ -634,7 +636,7 @@ public:
       (!fuse_do_reply)?0:fuse_reply_err(req, ENOENT);
       return;
     }
-    // store the shared pointer the file as file handle
+    // store the shared pointer to the file as file handle
     fi->fh = (uint64_t) fptr;
     //    fi->direct_io = 1;
     (!fuse_do_reply)?0:fuse_reply_open(req, fi);
@@ -672,7 +674,8 @@ public:
       (!fuse_do_reply)?0:fuse_reply_err(req, ENOENT);
       return;
     }
-    // store the shared pointer the file as file handle
+
+    // store the shared pointer to the file as file handle
     fi->fh = (uint64_t) fptr;
 
     if (*fptr)
@@ -680,11 +683,11 @@ public:
     
     struct fuse_entry_param e;
     memcpy(&e.attr, (*fptr)->getStat(), sizeof(struct stat));
-
+    
     e.ino = e.attr.st_ino;
     e.attr_timeout  = attrcachetime;
     e.entry_timeout = entrycachetime;
-
+    
     // attach to the parent
     inode->getNamesInode()[name]=ino;
     inode->std::set<diamond_ino_t>::insert(ino);
@@ -692,6 +695,61 @@ public:
     diamond_static_debug("ino=%s name=%s\n", (*fptr)->getIno().c_str(), (*fptr)->getName().c_str());
     (!fuse_do_reply)?0:fuse_reply_create(req, &e, fi);
   }
+
+  //--------------------------------------------------------------------------
+  //! Create a symlink
+  //--------------------------------------------------------------------------
+  static void
+  createlink (fuse_req_t req, 
+	      fuse_ino_t parent, 
+	      const char *name,
+	      mode_t mode, 
+	      struct fuse_file_info *fi)
+  {
+    diamondCache::diamondFilePtr* fptr = new diamondCache::diamondFilePtr;
+
+    diamondCache::diamondDirPtr inode = FS->getDir(DIAMOND_INODE(parent), false, false);
+
+    if (!inode) {
+      (!fuse_do_reply)?0:fuse_reply_err(req, ENOENT);
+      return;
+    }
+    
+    if (inode->getNamesInode().count(name)) {
+      (!fuse_do_reply)?0:fuse_reply_err(req, EEXIST);
+      return;
+    }
+
+    diamond_ino_t ino = FS->newInode();
+    *fptr = FS->getFile(ino, true, true, name);
+    
+    if (!fptr) {
+      (!fuse_do_reply)?0:fuse_reply_err(req, ENOENT);
+      return;
+    }
+
+    // store the shared pointer to the link as file handle
+    fi->fh = (uint64_t) fptr;
+
+    if (*fptr)
+      (*fptr)->makeStat(req?(fuse_req_ctx(req)->uid):0, req?(fuse_req_ctx(req)->gid):0, DIAMOND_TO_INODE(ino) , S_IFLNK | mode, 0);
+    
+    struct fuse_entry_param e;
+    memcpy(&e.attr, (*fptr)->getStat(), sizeof(struct stat));
+    
+    e.ino = e.attr.st_ino;
+    e.attr_timeout  = attrcachetime;
+    e.entry_timeout = entrycachetime;
+    
+    // attach to the parent
+    inode->getNamesInode()[name]=ino;
+    inode->std::set<diamond_ino_t>::insert(ino);
+    dump_stat(&e.attr);
+    diamond_static_debug("ino=%s name=%s\n", (*fptr)->getIno().c_str(), (*fptr)->getName().c_str());
+    (!fuse_do_reply)?0:fuse_reply_entry(req, &e);
+    return;
+  }
+
 
   //--------------------------------------------------------------------------
   //! Read from file. Returns the number of bytes transferred, or 0 if offset
@@ -839,8 +897,12 @@ public:
     if (size == 0) {
       (!fuse_do_reply)?0:fuse_reply_xattr(req, (*attr)->size());
       return ;
+    } else {
+      if (size == DIAMONDFS_XATTR_REALINK_SIZE) {
+	(!fuse_do_reply)?0:fuse_reply_readlink(req, &(**attr)[0]);
+	return ;
+      }
     }
-
 
     if ((*attr)->size() > size)
       	(!fuse_do_reply)?0:fuse_reply_err(req, ERANGE);
@@ -974,6 +1036,71 @@ public:
     else
       (!fuse_do_reply)?0:fuse_reply_err(req, 0);
     return;
+  }
+
+  //--------------------------------------------------------------------------
+  //! Create a symlink
+  //--------------------------------------------------------------------------
+  static void 
+  symlink (fuse_req_t req, 
+	   const char *link, 
+	   fuse_ino_t parent,
+	   const char *name)
+  {
+    struct fuse_file_info fi;
+    fi.fh = 0;
+    diamond::common::BufferPtr buffer;
+    
+    diamond_static_debug("link=%s parent=%llu name=%s", link, parent, name);
+
+    createlink (req, 
+	  parent, 
+	  name,
+	  S_IRWXU | S_IRWXG | S_IRWXO, 
+	  &fi);
+
+    diamond_static_debug("fh=%llu", fi.fh);
+    // in case of error there is no handle to the inode
+    if (!fi.fh)
+      return;
+        
+    // set the link as an attribute
+    buffer = (*((diamondCache::diamondFilePtr*)(fi.fh))->get())["sys.symlink"];
+    (**buffer).putData(link,strlen(link)+1);
+    
+    // remove allocated pointer from createlink
+    delete ((diamondCache::diamondFilePtr*)fi.fh);
+  }
+
+  //--------------------------------------------------------------------------
+  //! Read a symlink
+  //--------------------------------------------------------------------------
+  /**
+   * Read symbolic link
+   *
+   * Valid replies:
+   *   fuse_reply_readlink
+   *   fuse_reply_err
+   *
+   * @param req request handle
+   * @param ino the inode number
+   */
+  static void 
+  readlink (fuse_req_t req, 
+	    fuse_ino_t ino)
+  {
+#ifdef __APPLE__
+    getxattr (req,
+	      ino, 
+	      "sys.symlink",
+	      DIAMONDFS_XATTR_REALINK_SIZE,
+	      0);
+#else
+    getxattr (req,
+	      ino,
+	      "sys.symlink",
+	      DIAMONDFS_XATTR_REALINK_SIZE);
+#endif
   }
 
   //--------------------------------------------------------------------------
