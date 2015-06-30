@@ -31,7 +31,7 @@
 DIAMONDCOMMONNAMESPACE_BEGIN
 
 /*----------------------------------------------------------------------------*/
-RWMutex::RWMutex ()
+RWMutex::RWMutex()
 {
   // ---------------------------------------------------------------------------
   //! Constructor
@@ -51,41 +51,37 @@ RWMutex::RWMutex ()
   pthread_rwlockattr_init(&attr);
 
   // readers don't go ahead of writers!
-  if (pthread_rwlockattr_setkind_np(&attr, PTHREAD_RWLOCK_PREFER_WRITER_NP))
-  {
+  if (pthread_rwlockattr_setkind_np(&attr, PTHREAD_RWLOCK_PREFER_WRITER_NP)) {
     throw "pthread_rwlockattr_setkind_np failed";
   }
-  if (pthread_rwlockattr_setpshared(&attr, PTHREAD_PROCESS_SHARED))
-  {
+  if (pthread_rwlockattr_setpshared(&attr, PTHREAD_PROCESS_SHARED)) {
     throw "pthread_rwlockattr_setpshared failed";
   }
 
-  if ((pthread_rwlock_init(&rwlock, &attr)))
-  {
+  if ((pthread_rwlock_init(&rwlock, &attr))) {
     throw "pthread_rwlock_init failed";
   }
 }
 #else
   pthread_rwlockattr_init(&attr);
-  if (pthread_rwlockattr_setpshared(&attr, PTHREAD_PROCESS_SHARED))
-  {
+  if (pthread_rwlockattr_setpshared(&attr, PTHREAD_PROCESS_SHARED)) {
     throw "pthread_rwlockattr_setpshared failed";
   }
-  if ((pthread_rwlock_init(&rwlock, &attr)))
-  {
+  if ((pthread_rwlock_init(&rwlock, &attr))) {
     throw "pthread_rwlock_init failed";
   }
 }
 #endif
 
-RWMutex::~RWMutex () {
+RWMutex::~RWMutex()
+{
   // ---------------------------------------------------------------------------
   //! Destructor
   // ---------------------------------------------------------------------------
 }
 
 void
-RWMutex::SetBlocking (bool block)
+RWMutex::SetBlocking(bool block)
 {
   // ---------------------------------------------------------------------------
   //! Set the write lock to blocking or not blocking
@@ -95,7 +91,7 @@ RWMutex::SetBlocking (bool block)
 }
 
 void
-RWMutex::SetWLockTime (const size_t &nsec)
+RWMutex::SetWLockTime(const size_t &nsec)
 {
   // ---------------------------------------------------------------------------
   //! Set the time to wait the acquisition of the write mutex before releasing quicky and retrying
@@ -106,33 +102,29 @@ RWMutex::SetWLockTime (const size_t &nsec)
 }
 
 void
-RWMutex::LockRead ()
+RWMutex::LockRead()
 {
   // ---------------------------------------------------------------------------
   //! Lock for read
   // ---------------------------------------------------------------------------
 
-  if (pthread_rwlock_rdlock(&rwlock))
-  {
+  if (pthread_rwlock_rdlock(&rwlock)) {
     throw "pthread_rwlock_rdlock failed";
   }
 }
 
 void
-RWMutex::LockReadCancel ()
+RWMutex::LockReadCancel()
 {
   // ---------------------------------------------------------------------------
   //! Lock for read allowing to be canceled waiting for a lock
   // ---------------------------------------------------------------------------
 
 #ifndef __APPLE__
-  while (1)
-  {
+  while (1) {
     int rc = pthread_rwlock_timedrdlock(&rwlock, &rlocktime);
-    if (rc)
-    {
-      if (rc == ETIMEDOUT)
-      {
+    if (rc) {
+      if (rc == ETIMEDOUT) {
         fprintf(stderr, "=== READ LOCK CANCEL POINT == TID=%llu OBJECT=%llx\n", (unsigned long long) pthread_self(), (unsigned long long) this);
         pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, 0);
         pthread_testcancel();
@@ -140,21 +132,16 @@ RWMutex::LockReadCancel ()
         struct timespec naptime, waketime;
         naptime.tv_sec = 0;
         naptime.tv_nsec = 100 * 1000000;
-        while (nanosleep(&naptime, &waketime) && EINTR == errno)
-        {
+        while (nanosleep(&naptime, &waketime) && EINTR == errno) {
           naptime.tv_sec = waketime.tv_sec;
           naptime.tv_nsec = waketime.tv_nsec;
         }
         pthread_setcancelstate(PTHREAD_CANCEL_DISABLE, 0);
-      }
-      else
-      {
+      } else {
         fprintf(stderr, "=== READ LOCK EXCEPTION == TID=%llu OBJECT=%llx rc=%d\n", (unsigned long long) pthread_self(), (unsigned long long) this, rc);
         throw "pthread_rwlock_timedrdlock failed";
       }
-    }
-    else
-    {
+    } else {
       break;
     }
   }
@@ -164,71 +151,57 @@ RWMutex::LockReadCancel ()
 }
 
 void
-RWMutex::UnLockRead ()
+RWMutex::UnLockRead()
 {
   // ---------------------------------------------------------------------------
   //! Unlock a read lock
   // ---------------------------------------------------------------------------
 
-  if (pthread_rwlock_unlock(&rwlock))
-  {
+  if (pthread_rwlock_unlock(&rwlock)) {
     throw "pthread_rwlock_unlock failed";
   }
 }
 
 void
-RWMutex::LockWrite ()
+RWMutex::LockWrite()
 {
   // ---------------------------------------------------------------------------
   //! Lock for write
   // ---------------------------------------------------------------------------
 
-  if (blocking)
-  {
+  if (blocking) {
     // a blocking mutex is just a normal lock for write
-    if (pthread_rwlock_wrlock(&rwlock))
-    {
-      throw "pthread_rwlock_rdlock failed";
+    if (pthread_rwlock_wrlock(&rwlock)) {
+      throw "pthread_rwlock_wrlock failed";
     }
-  }
-  else
-  {
+  } else {
 #ifdef __APPLE__
     // -------------------------------------------------
     // Mac does not support timed mutexes
     // -------------------------------------------------
-    if (pthread_rwlock_wrlock(&rwlock))
-    {
+    if (pthread_rwlock_wrlock(&rwlock)) {
       throw "pthread_rwlock_rdlock failed";
     }
 #else
     // a non-blocking mutex tries for few seconds to write lock, then releases
     // this has the side effect, that it allows dead locked readers to jump ahead the lock queue
-    while (1)
-    {
+    while (1) {
       int rc = pthread_rwlock_timedwrlock(&rwlock, &wlocktime);
-      if (rc)
-      {
-        if (rc != ETIMEDOUT)
-        {
+      if (rc) {
+        if (rc != ETIMEDOUT) {
           fprintf(stderr, "=== WRITE LOCK EXCEPTION == TID=%llu OBJECT=%llx rc=%d\n", (unsigned long long) pthread_self(), (unsigned long long) this, rc);
           throw "pthread_rwlock_wrlock failed";
-        }
-        else
-        {
+        } else {
           //fprintf(stderr,"==== WRITE LOCK PENDING ==== TID=%llu OBJECT=%llx\n",(unsigned long long)pthread_self(), (unsigned long long)this);
           struct timespec naptime, waketime;
           naptime.tv_sec = 0;
           naptime.tv_nsec = 500 * 1000000;
-          while (nanosleep(&naptime, &waketime) && EINTR == errno)
-          {
+          while (nanosleep(&naptime, &waketime) && EINTR == errno) {
             naptime.tv_sec = waketime.tv_sec;
             naptime.tv_nsec = waketime.tv_nsec;
           }
         }
-      }
-      else
-      {
+      } else {
         //	  fprintf(stderr,"=== WRITE LOCK ACQUIRED  ==== TID=%llu OBJECT=%llx\n",(unsigned long long)pthread_self(), (unsigned long long)this);
         break;
       }
@@ -238,21 +211,20 @@ RWMutex::LockWrite ()
 }
 
 void
-RWMutex::UnLockWrite ()
+RWMutex::UnLockWrite()
 {
   // ---------------------------------------------------------------------------
   //! Unlock a write lock
   // ---------------------------------------------------------------------------
 
-  if (pthread_rwlock_unlock(&rwlock))
-  {
+  if (pthread_rwlock_unlock(&rwlock)) {
     throw "pthread_rwlock_unlock failed";
   }
 
 }
 
 int
-RWMutex::TimeoutLockWrite ()
+RWMutex::TimeoutLockWrite()
 {
   // ---------------------------------------------------------------------------
   //! Lock for write but give up after wlocktime
@@ -265,7 +237,7 @@ RWMutex::TimeoutLockWrite ()
 #endif
 }
 
-RWMutexWriteLock::RWMutexWriteLock (RWMutex &mutex)
+RWMutexWriteLock::RWMutexWriteLock(RWMutex &mutex)
 {
   // ---------------------------------------------------------------------------
   //! Constructor
@@ -275,7 +247,7 @@ RWMutexWriteLock::RWMutexWriteLock (RWMutex &mutex)
   Mutex->LockWrite();
 }
 
-RWMutexWriteLock::~RWMutexWriteLock ()
+RWMutexWriteLock::~RWMutexWriteLock()
 {
   // ---------------------------------------------------------------------------
   //! Destructor
@@ -284,7 +256,7 @@ RWMutexWriteLock::~RWMutexWriteLock ()
   Mutex->UnLockWrite();
 }
 
-RWMutexReadLock::RWMutexReadLock (RWMutex &mutex)
+RWMutexReadLock::RWMutexReadLock(RWMutex &mutex)
 {
   // ---------------------------------------------------------------------------
   //! Constructor
@@ -294,25 +266,22 @@ RWMutexReadLock::RWMutexReadLock (RWMutex &mutex)
   Mutex->LockRead();
 }
 
-RWMutexReadLock::RWMutexReadLock (RWMutex &mutex, bool allowcancel)
+RWMutexReadLock::RWMutexReadLock(RWMutex &mutex, bool allowcancel)
 {
   // ---------------------------------------------------------------------------
   //! Constructor
   // ---------------------------------------------------------------------------
 
-  if (allowcancel)
-  {
+  if (allowcancel) {
     Mutex = &mutex;
     Mutex->LockReadCancel();
-  }
-  else
-  {
+  } else {
     Mutex = &mutex;
     Mutex->LockRead();
   }
 }
 
-RWMutexReadLock::~RWMutexReadLock ()
+RWMutexReadLock::~RWMutexReadLock()
 {
   // ---------------------------------------------------------------------------
   //! Destructor
