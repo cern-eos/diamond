@@ -33,6 +33,7 @@ set (CPACK_SOURCE_IGNORE_FILES
 include (CPack)
 
 find_package (OpenSSL REQUIRED)
+find_package (UUID REQUIRED)
 
 add_definitions (-D_FILE_OFFSET_BITS=64 -DLinux )
 if (APPLE)
@@ -47,7 +48,7 @@ include_directories (${DIAMOND_SOURCE_DIR})
 add_subdirectory(common)
 add_subdirectory(rio)
 add_subdirectory(fuse)
-add_subdirectory(test)
+#add_subdirectory(test)
 
 ######################################################################################################################
 # Print Configuration

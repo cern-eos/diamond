@@ -9,6 +9,8 @@ add_library( diamond_rio SHARED
   diamondFile.cc
   diamondDir.cc
   diamondMeta.cc
+  diamondBackend/PosixBackend.cc
+  diamondBackend/diamondBackend.cc
 )
 
 target_link_libraries( diamond_rio pthread rt

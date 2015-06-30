@@ -23,10 +23,10 @@
 
 /**
  * @file   rioCache.cc
- * 
+ *
  * @brief  Google Test for the rioCache class
- * 
- * 
+ *
+ *
  */
 
 #include <cstdlib>
@@ -40,7 +40,8 @@
 using namespace diamond::common;
 using namespace diamond::rio;
 
-TEST (diamondCache, CacheLRU) {
+TEST(diamondCache, CacheLRU)
+{
   Logging::Init();
   Logging::SetUnit("GTEST");
   Logging::SetLogPriority(LOG_DEBUG);
@@ -50,11 +51,9 @@ TEST (diamondCache, CacheLRU) {
   EXPECT_EQ(icache.dsize(), 0);
   EXPECT_EQ(icache.fsize(), 0);
 
-  for (size_t i=0 ; i< 1000; i++) {
-    std::stringstream s;
-    s << i;
-    icache.getFile(s.str());
-    icache.getDir(s.str());
+  for (size_t i = 0; i < 1000; i++) {
+    icache.getFile(i);
+    icache.getDir(i);
   }
 
   EXPECT_EQ(icache.dsize(), 1000);
@@ -62,13 +61,11 @@ TEST (diamondCache, CacheLRU) {
 
   diamond_static_info("f-cache-size=%u d-cache-size=%u", icache.dsize(), icache.fsize());
 
-  for (size_t i=0 ; i< 1000; i++) {
-    std::stringstream s;
-    s << i;
-    diamondCache::diamondFilePtr f = icache.getFile(s.str(), false);
-    diamondCache::diamondDirPtr d = icache.getDir(s.str(), false);
+  for (size_t i = 0; i < 1000; i++) {
+    diamondCache::diamondFilePtr f = icache.getFile(i, false);
+    diamondCache::diamondDirPtr d = icache.getDir(i, false);
   }
-  
+
   std::stringstream sout;
   icache.DumpCachedFiles(sout);
   EXPECT_EQ(3890, sout.str().length());

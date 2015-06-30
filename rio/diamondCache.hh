@@ -20,9 +20,10 @@
 
 #include "common/RWMutex.hh"
 #include "common/Logging.hh"
-
+#include "common/UUID.hh"
 
 DIAMONDRIONAMESPACE_BEGIN
+;
 
 using namespace diamond::common;
 
@@ -32,40 +33,68 @@ public:
   typedef std::shared_ptr<diamondDir> diamondDirPtr;
 
   diamondFilePtr
-  getFile (diamond_ino_t ino, bool update_lru=true, bool create=true, std::string name="");
+  getFile (diamond_ino_t& ino, bool update_lru = true, std::string name = "");
 
   diamondDirPtr
-  getDir (diamond_ino_t ino, bool update_lru=true, bool create=true, std::string name="");
+  getDir (diamond_ino_t& ino, bool update_lru = true, std::string name = "");
 
   int
-  rmFile (diamond_ino_t ino);
-  
-  int 
-  rmDir (diamond_ino_t ino);
+  mkDir (uid_t uid, gid_t gid, mode_t mode, diamondDirPtr parent,
+         diamond_ino_t& new_inode, std::string name);
 
+  int
+  mkFile (uid_t uid, gid_t gid, mode_t mode, diamondDirPtr parent,
+          diamond_ino_t& new_inode, std::string name);
+
+  int
+  rmFile (uid_t uid, gid_t gid, diamond_ino_t ino);
+
+  int
+  rmDir (uid_t uid, gid_t gid, diamond_ino_t ino);
+
+  int
+  renameFile (uid_t uid, gid_t gid, diamond_ino_t ino,
+              diamond_ino_t old_parent_ino, diamond_ino_t new_parent_ino,
+              std::string old_name,
+              std::string new_name);
+
+  int
+  renameDir (uid_t uid, gid_t gid, diamond_ino_t ino,
+             diamond_ino_t old_parent_ino, diamond_ino_t new_parent_ino,
+             std::string old_name,
+             std::string new_name);
+
+  int
+  sync (diamondFilePtr& fptr);
+
+  int
+  sync (diamondDirPtr& dptr);
 
   diamondCache (std::string mount_point = "/");
   diamondCache (const diamondCache& orig);
   virtual ~diamondCache ();
 
-  size_t fsize() {
+  size_t
+  fsize () {
     diamond::common::RWMutexReadLock flock(mFilesMutex);
     return mFilesLRU.size();
   }
 
-  size_t dsize() {
+  size_t
+  dsize () {
     diamond::common::RWMutexReadLock flock(mDirsMutex);
     return mDirsLRU.size();
   }
 
-  void DumpCachedFiles(std::stringstream& out);
-  void DumpCachedDirs(std::stringstream& out);
+  void DumpCachedFiles (std::stringstream& out);
+  void DumpCachedDirs (std::stringstream& out);
 
-  diamond_ino_t newInode() {
+  diamond_ino_t
+  newInode () {
     static diamond::common::RWMutex sMutex;
-    static unsigned long long last_inode=0;
+    static unsigned long long last_inode = 0;
     diamond::common::RWMutexWriteLock sLock(sMutex);
-    return std::to_string(++last_inode);
+    return (++last_inode);
   }
 
 private:
