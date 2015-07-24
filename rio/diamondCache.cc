@@ -209,4 +209,33 @@ diamondCache::DumpCachedDirs(std::stringstream& out)
   }
 }
 
+void
+diamondCache::configure(std::map<std::string, std::string> &conf)
+{
+  {
+    // -------------------------------------------------------------------------
+    // commit thread pool
+    // -------------------------------------------------------------------------
+    int lCommitThreads = 8;
+    if (conf.count("diamondfs.threads.commit.n")) {
+      lCommitThreads = atoi(conf["diamondfs.threads.commit.n"].c_str());
+    }
+    diamond::rio::diamondFile::gIO_CommitPool.Start(lCommitThreads);
+    diamond_static_info("msg=\"starting commit thread pool\" nthreads=%d",
+      lCommitThreads);
+  }
+
+  {
+    // -------------------------------------------------------------------------
+    // pre-fetch thread pool
+    // -------------------------------------------------------------------------
+    int lPrefetchThreads = 4;
+    if (conf.count("diamondfs.threads.prefetch.n")) {
+      lPrefetchThreads = atoi(conf["diamondfs.threads.prefetch.n"].c_str());
+    }
+    diamond::rio::diamondFile::gIO_PrefetchPool.Start(lPrefetchThreads);
+    diamond_static_info("msg=\"starting prefetch thread pool\" nthreads=%d",
+      lPrefetchThreads);
+  }
+}
 DIAMONDRIONAMESPACE_END

@@ -238,6 +238,21 @@ public:
             utc.tm_sec);
     return std::string(result);
   }
+
+  static void
+  Wait (int mills) {
+
+    struct timespec naptime, waketime;
+
+    naptime.tv_sec = mills / 1000;
+    naptime.tv_nsec = (mills % 1000)*1000000;
+
+    while (nanosleep(&naptime, &waketime) && EINTR == errno) {
+      naptime.tv_sec = waketime.tv_sec;
+      naptime.tv_nsec = waketime.tv_nsec;
+    }
+
+  }
 };
 
 // ---------------------------------------------------------------------------

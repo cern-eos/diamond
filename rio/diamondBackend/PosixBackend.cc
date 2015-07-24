@@ -111,7 +111,7 @@ PosixBackend::sync(diamondCache::diamondDirPtr& dir)
       }
     }
 
-    if (!stat(lDirPath.c_str(), &buf)) {
+    if (!lstat(lDirPath.c_str(), &buf)) {
       if (!(dir.get()->getSyncOps().size())) {
         diamond_static_info("%d.%d %d.%d",
           buf.st_mtim.tv_sec,
@@ -121,7 +121,7 @@ PosixBackend::sync(diamondCache::diamondDirPtr& dir)
         if ((buf.st_mtim.tv_sec == dir.get()->getSyncTime()->tv_sec) &&
           (buf.st_mtim.tv_nsec == dir.get()->getSyncTime()->tv_nsec)) {
           // no back-end changes
-          diamond_static_info("fast-track:no-backend-changes ino=%llx name=%s", dir.get()->getIno(),
+          diamond_static_info("dir-fast-track:no-backend-changes ino=%llx name=%s", dir.get()->getIno(),
             dir.get()->getName().c_str());
           return 0;
         }
@@ -131,8 +131,25 @@ PosixBackend::sync(diamondCache::diamondDirPtr& dir)
         if ((buf.st_mtim.tv_sec >= dir.get()->getSyncTime()->tv_sec) &&
         (buf.st_mtim.tv_nsec > dir.get()->getSyncTime()->tv_nsec)) {
         // only front-end changes
-        diamond_static_info("fast-track:front-end-changes ino=%llx name=%s", dir.get()->getIno(),
+        diamond_static_info("dir-fast-track:front-end-changes ino=%llx name=%s", dir.get()->getIno(),
           dir.get()->getName().c_str());
+      }
+    }
+    if (S_ISLNK(buf.st_mode)) {
+      diamond_static_info("msg=\"reading link\" path=%s", lDirPath.c_str());
+      char linkpath[4096];
+      ssize_t linksize = 0;
+      if ((linksize = readlink(lDirPath.c_str(), linkpath, sizeof(linkpath))) > 0) {
+        {
+          linkpath[linksize] = 0;
+          diamond::common::BufferPtr buffer;
+          buffer = dir.get()->std::map<std::string, diamond::common::BufferPtr>::operator [] ("sys.symlink");
+          (**buffer).truncateData(0);
+          (**buffer).putData(linkpath, linksize + 1);
+        }
+      } else {
+        diamond_static_err("msg=\"failed to read link\" path=%s errno=%d",
+          lDirPath.c_str(), errno);
       }
     }
   }
@@ -156,7 +173,7 @@ PosixBackend::sync(diamondCache::diamondDirPtr& dir)
       if ((lName == ".") || (lName == ".."))
         continue;
 
-      if (!stat(lStatPath.c_str(), &buf)) {
+      if (!lstat(lStatPath.c_str(), &buf)) {
         diamond_static_info("child=%s ino=%u", dentry->d_name, buf.st_ino);
         diamond_ino_t inode = buf.st_ino;
         dir.get()->getNamesInode()[dentry->d_name] = inode;
@@ -166,8 +183,10 @@ PosixBackend::sync(diamondCache::diamondDirPtr& dir)
 
           if (buf.st_mode & S_IFREG)
             mFileInodeMap[inode] = lStatPath;
-          else
+          if (buf.st_mode & S_IFDIR)
             mDirInodeMap[inode] = lStatPath;
+          if (buf.st_mode & S_IFLNK)
+            mFileInodeMap[inode] = lStatPath;
         }
       }
     }
@@ -209,20 +228,45 @@ PosixBackend::sync(diamondCache::diamondFilePtr& file)
   diamond::common::RWMutexWriteLock dLock(file.get()->Locker());
   diamond::common::RWMutexReadLock iLock(mInodeMapMutex);
 
-  diamond_static_info("path=%s test", mFileInodeMap[file.get()->getIno()].c_str());
+  std::string path = mFileInodeMap[file.get()->getIno()].c_str();
+  diamond_static_info("path=%s", path.c_str());
   struct stat buf;
 
   // fetch the full meta-data if there is no op pending
-  if ((!(file.get()->getSyncOps().size())) && !stat(mFileInodeMap[file.get()->getIno()].c_str(), &buf)) {
-    diamond_static_info("path=%s action=full-stat-sync", mFileInodeMap[file.get()->getIno()].c_str());
+  if ((!(file.get()->getSyncOps().size())) && !lstat(path.c_str(), &buf)) {
+    diamond_static_info("path=%s action=full-stat-sync", path.c_str());
     file.get()->setStat(buf);
+    if ((buf.st_mtim.tv_sec == file.get()->getSyncTime()->tv_sec) &&
+      (buf.st_mtim.tv_nsec == file.get()->getSyncTime()->tv_nsec)) {
+      diamond_static_info("file-fast-track:no-backend-changes ino=%llx name=%s", file.get()->getIno(),
+        file.get()->getName().c_str());
+      return rc;
+    }
   }
 
-  rc = syncMeta(file.get(), mFileInodeMap[file.get()->getIno()].c_str());
+  rc = syncMeta(file.get(), path.c_str());
 
-  if (!stat(mFileInodeMap[file.get()->getIno()].c_str(), &buf)) {
-    diamond_static_info("path=%s action=full-stat-sync", mFileInodeMap[file.get()->getIno()].c_str());
+  if (!lstat(path.c_str(), &buf)) {
+    diamond_static_info("path=%s action=full-stat-sync %x", path.c_str(), buf.st_mode);
     file.get()->setStat(buf);
+    file.get()->setSyncTime(buf);
+    if (S_ISLNK(buf.st_mode)) {
+      diamond_static_info("msg=\"reading link\" path=%s", path.c_str());
+      char linkpath[4096];
+      ssize_t linksize = 0;
+      if ((linksize = readlink(path.c_str(), linkpath, sizeof(linkpath))) > 0) {
+        {
+          linkpath[linksize] = 0;
+          diamond::common::BufferPtr buffer;
+          buffer = file.get()->std::map<std::string, diamond::common::BufferPtr>::operator [] ("sys.symlink");
+          (**buffer).truncateData(0);
+          (**buffer).putData(linkpath, linksize + 1);
+        }
+      } else {
+        diamond_static_err("msg=\"failed to read link\" path=%s errno=%d",
+          path.c_str(), errno);
+      }
+    }
   }
   return rc;
 }
@@ -267,6 +311,16 @@ PosixBackend::syncMeta(diamondMeta *meta, std::string path)
       if (it->first == meta->kActionCommitXattr) {
         diamond::common::BufferPtr attr;
         attr = meta->std::map<std::string, diamond::common::BufferPtr>::operator [] (it->second);
+        if (it->second == "sys.symlink") {
+          // convert into a symlink
+          if (unlink(path.c_str())) {
+            diamond_static_err("msg=\"failed to unlink symlink placeholder\" path=%s errno=%d", path.c_str(), errno);
+          } else {
+            if (symlink(&(**attr)[0], path.c_str())) {
+              diamond_static_err("msg=\"failed to symlink\" old-path=%s new-path=%s errno=%d", &(**attr)[0], path.c_str(), errno);
+            }
+          }
+        }
         // commit kv attribute
         retc |= lsetxattr(path.c_str(), it->second.c_str(), &(**attr)[0], (*attr)->size(), 0);
       } else if (it->first == meta->kActionDeleteXattr) {
@@ -321,7 +375,7 @@ PosixBackend::syncMeta(diamondMeta *meta, std::string path)
 }
 
 int
-PosixBackend::mkFile(uid_t uid, gid_t gid, mode_t mode, diamondCache::diamondDirPtr parent, std::string& name, diamond_ino_t& new_inode)
+PosixBackend::mkFile(uid_t uid, gid_t gid, mode_t mode, diamondCache::diamondDirPtr parent, std::string& name, diamond_ino_t & new_inode)
 {
   new_inode = 0;
   fprintf(stderr, "mkFile\n");
@@ -356,7 +410,7 @@ PosixBackend::mkDir(uid_t uid,
   mode_t mode,
   diamondCache::diamondDirPtr parent,
   std::string& name,
-  diamond_ino_t& new_inode)
+  diamond_ino_t & new_inode)
 {
   new_inode = 0;
   fprintf(stderr, "mkDir\n");

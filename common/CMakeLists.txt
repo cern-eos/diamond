@@ -12,6 +12,7 @@ add_library( diamond_common SHARED
   hash/spooky.cc
   hash/longstring.cc
   kv/kv.cc
+  threadpool/ThreadPool.cc
 )
 
 target_link_libraries( diamond_common pthread rt ${UUID_LIB}

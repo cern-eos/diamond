@@ -1388,6 +1388,11 @@ main(int argc, char *argv[])
     diamond_static_notice("unit=self-test create=%.02f kHz", 10000 / tm4.RealTime());
   }
 
+  std::map<std::string, std::string> conf;
+  conf["diamondfs.threads.commit.n"] = "128";
+  conf["diamondfs.threads.prefetch.n"] = "1";
+
+  fs.configure(conf);
   //----------------------------------------------------------------------------
   // start the FUSE daemon
   //----------------------------------------------------------------------------

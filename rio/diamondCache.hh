@@ -97,6 +97,9 @@ public:
     return (++last_inode);
   }
 
+  void
+  configure (std::map<std::string, std::string> &conf);
+
 private:
   typedef std::pair<std::list<diamond_ino_t>::iterator, diamondFilePtr> lru_file_t;
   typedef std::pair<std::list<diamond_ino_t>::iterator, diamondDirPtr> lru_dir_t;
@@ -112,8 +115,6 @@ private:
   lru_list_t mDirsLRU;
 
   diamond::common::RWMutex mDirsMutex;
-
-
 };
 
 DIAMONDCOMMONNAMESPACE_END
