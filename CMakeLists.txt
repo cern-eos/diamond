@@ -47,7 +47,7 @@ include_directories (${DIAMOND_SOURCE_DIR})
 add_subdirectory(common)
 add_subdirectory(rio)
 add_subdirectory(fuse)
-add_subdirectory(test)
+#add_subdirectory(test)
 
 ######################################################################################################################
 # Print Configuration

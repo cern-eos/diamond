@@ -33,7 +33,7 @@ diamondMeta::makeStat(uid_t uid,
   struct timespec ts;
   GetTimeSpecNow(ts);
   struct stat st;
-  memset(&st, sizeof(st),0);
+  memset(&st, 0, sizeof(st));
   st.st_dev  = 0xcafe;
   st.st_ino  = ino;
   st.st_mode = mode;

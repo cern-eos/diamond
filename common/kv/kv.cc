@@ -345,7 +345,7 @@ kv::Set (std::string& key, void* value, size_t value_length)
     {
       handle.retc = errno;
       std::cerr << "fatal: wrote only " << n_writev << " bytes instead of "
-        << itemsize << " - retc=" << handle.retc << " - aborting!" << std::cerr;
+        << itemsize << " - retc=" << handle.retc << " - aborting!" << std::endl;
       abort();
     }
   }
